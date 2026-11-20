@@ -1,9 +1,31 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::os::unix::fs::FileExt;
 use std::sync::{atomic::Ordering, Arc};
 use std::time::{Duration, Instant};
+
+#[cfg(unix)]
+fn write_all_at_offset(file: &File, data: &[u8], offset: u64) -> std::io::Result<()> {
+    use std::os::unix::fs::FileExt;
+    file.write_all_at(data, offset)
+}
+
+#[cfg(windows)]
+fn write_all_at_offset(file: &File, data: &[u8], offset: u64) -> std::io::Result<()> {
+    use std::os::windows::fs::FileExt;
+    let mut written = 0usize;
+    while written < data.len() {
+        let n = file.seek_write(&data[written..], offset + written as u64)?;
+        if n == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::WriteZero,
+                "failed to write whole buffer",
+            ));
+        }
+        written += n;
+    }
+    Ok(())
+}
 
 use futures_util::StreamExt;
 use reqwest::{header, Client};
@@ -245,9 +267,10 @@ async fn flush_buffer(
     buf.clear();
 
     let file_clone = Arc::clone(file);
-    let write_res = tokio::task::spawn_blocking(move || file_clone.write_all_at(&payload, write_offset))
-        .await
-        .map_err(|e| DownloadError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+    let write_res =
+        tokio::task::spawn_blocking(move || write_all_at_offset(&file_clone, &payload, write_offset))
+            .await
+            .map_err(|e| DownloadError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
 
     match write_res {
         Ok(()) => {

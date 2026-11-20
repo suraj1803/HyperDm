@@ -44,3 +44,12 @@ cd src-tauri && cargo test
 # Typecheck and build frontend
 npm run build
 ```
+
+## Releasing (Windows & Linux)
+
+HyperDM includes an automated GitHub Actions release workflow (`.github/workflows/release.yml`) that builds Windows (`.exe` / `.msi`) and Linux (`.AppImage` / `.deb` / `.rpm`) installers plus `hyperdm-browser-extension.zip`:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```

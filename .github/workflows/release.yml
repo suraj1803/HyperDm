@@ -1,0 +1,97 @@
+name: Release HyperDM (Windows & Linux)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-tauri:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run Rust download engine tests
+        working-directory: src-tauri
+        run: cargo test -- --nocapture
+
+      - name: Build and publish Tauri installers
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "HyperDM ${{ github.ref_name }}"
+          releaseBody: |
+            ## HyperDM ${{ github.ref_name }}
+
+            High-speed desktop download manager with dynamic file segmentation (work-stealing), Material Design 3 UI, browser extension integration, and system tray support.
+
+            ### Downloads
+            - **Windows**: Download the `.exe` (NSIS installer) or `.msi` package.
+            - **Linux**: Download the `.AppImage` (portable), `.deb` (Debian/Ubuntu), or `.rpm` (Fedora/RHEL).
+            - **Browser Extension**: Download `hyperdm-browser-extension.zip`, unzip it, and load via `chrome://extensions` (Load unpacked) or Firefox `about:debugging`.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  package-extension:
+    needs: publish-tauri
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Zip browser extension
+        run: |
+          cd browser-extension
+          zip -r ../hyperdm-browser-extension.zip .
+
+      - name: Upload browser extension to GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" hyperdm-browser-extension.zip --clobber
