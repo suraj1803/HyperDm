@@ -9,50 +9,48 @@
         box-sizing: border-box;
       }
       body {
-        width: 310px;
+        width: 320px;
         margin: 0;
-        padding: 14px;
-        background: #020617;
-        color: #f1f5f9;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+        padding: 16px;
+        background: #111318;
+        color: #e2e2e9;
+        font-family: "Google Sans", "Roboto", Inter, ui-sans-serif, system-ui, sans-serif;
         font-size: 13px;
       }
       .header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding-bottom: 12px;
-        border-bottom: 1px solid #1e293b;
-        margin-bottom: 12px;
+        margin-bottom: 14px;
       }
       .brand {
         display: flex;
         align-items: center;
-        gap: 8px;
-        font-weight: 700;
-        font-size: 14px;
+        gap: 10px;
+        font-weight: 600;
+        font-size: 15px;
       }
       .brand img {
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
+        width: 28px;
+        height: 28px;
+        border-radius: 10px;
       }
       .badge {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 3px 9px;
+        padding: 4px 10px;
         border-radius: 999px;
         font-size: 11px;
         font-weight: 600;
       }
       .badge.online {
-        background: rgba(16, 185, 129, 0.15);
-        color: #34d399;
+        background: #0f5223;
+        color: #c4eed0;
       }
       .badge.offline {
-        background: rgba(244, 63, 94, 0.15);
-        color: #fb7185;
+        background: #8c1d18;
+        color: #f9dedc;
       }
       .dot {
         width: 7px;
@@ -61,10 +59,9 @@
         background: currentColor;
       }
       .card {
-        background: #0f172a;
-        border: 1px solid #1e293b;
-        border-radius: 10px;
-        padding: 10px 12px;
+        background: #1d2026;
+        border-radius: 18px;
+        padding: 12px 14px;
         margin-bottom: 10px;
       }
       .row {
@@ -75,49 +72,49 @@
       }
       .label {
         font-size: 12px;
-        color: #cbd5e1;
+        color: #e2e2e9;
         font-weight: 500;
       }
       .sub {
         font-size: 11px;
-        color: #64748b;
+        color: #c4c6d0;
         margin-top: 2px;
       }
       input[type="number"],
       input[type="url"] {
-        background: #020617;
-        border: 1px solid #334155;
-        color: #f8fafc;
-        border-radius: 6px;
-        padding: 6px 8px;
+        background: #111318;
+        border: 1px solid #44474e;
+        color: #e2e2e9;
+        border-radius: 10px;
+        padding: 7px 10px;
         font-size: 12px;
         outline: none;
       }
       input[type="number"] {
-        width: 82px;
+        width: 84px;
         text-align: right;
       }
       input[type="url"] {
         width: 100%;
-        margin-top: 6px;
+        margin-top: 8px;
       }
       input:focus {
-        border-color: #0ea5e9;
+        border-color: #a8c7fa;
       }
       button {
         width: 100%;
-        margin-top: 8px;
-        padding: 7px 10px;
+        margin-top: 10px;
+        padding: 9px 14px;
         border: none;
-        border-radius: 7px;
-        background: #0ea5e9;
-        color: #020617;
-        font-weight: 700;
+        border-radius: 999px;
+        background: #a8c7fa;
+        color: #062e6f;
+        font-weight: 600;
         font-size: 12px;
         cursor: pointer;
       }
       button:hover {
-        background: #38bdf8;
+        filter: brightness(1.06);
       }
       .msg {
         margin-top: 6px;
@@ -125,14 +122,14 @@
         min-height: 14px;
       }
       .msg.ok {
-        color: #34d399;
+        color: #6dd58c;
       }
       .msg.err {
-        color: #fb7185;
+        color: #f2b8b5;
       }
       .divider {
         height: 1px;
-        background: #1e293b;
+        background: #282a31;
         margin: 10px 0;
       }
     </style>
@@ -153,7 +150,7 @@
       <div class="row">
         <div>
           <div class="label">Intercept Downloads</div>
-          <div class="sub">Auto-send browser downloads to HyperDM</div>
+          <div class="sub">Auto-send downloads to HyperDM</div>
         </div>
         <input type="checkbox" id="enabledToggle" />
       </div>

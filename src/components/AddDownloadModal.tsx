@@ -4,6 +4,7 @@ import {
   Globe,
   Loader2,
   ShieldAlert,
+  Sparkles,
   X,
   Zap,
 } from "lucide-react";
@@ -70,7 +71,7 @@ export function AddDownloadModal({
       const dir = await pickDirectory(saveDir);
       if (dir) setSaveDir(dir);
     } catch {
-      // User cancelled or dialog unavailable
+      // Cancelled
     }
   }
 
@@ -100,34 +101,53 @@ export function AddDownloadModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-      <div className="w-full max-w-xl rounded-xl border border-slate-800 bg-slate-900 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 text-sky-400">
-              <Zap className="h-4 w-4" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4">
+      <div
+        className="w-full max-w-xl rounded-[28px] p-6"
+        style={{
+          backgroundColor: "var(--md-surface-container-high)",
+          boxShadow: "var(--md-shadow-3)",
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div
+              className="flex h-11 w-11 items-center justify-center rounded-2xl"
+              style={{
+                backgroundColor: "var(--md-primary-container)",
+                color: "var(--md-on-primary-container)",
+              }}
+            >
+              <Zap className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">Add New Download</h2>
-              <p className="text-xs text-slate-400">Dynamic multi-segment acceleration</p>
+              <h2 className="text-lg font-medium tracking-tight">New Download</h2>
+              <p className="text-xs" style={{ color: "var(--md-on-surface-variant)" }}>
+                Dynamic multi-segment acceleration
+              </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-          >
-            <X className="h-4 w-4" />
+          <button onClick={onClose} className="md-icon-btn p-2" aria-label="Close">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 p-5">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+          {/* URL Input */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-300">
+            <label
+              className="mb-1.5 block text-xs font-medium"
+              style={{ color: "var(--md-on-surface-variant)" }}
+            >
               Download URL
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-2.5">
               <div className="relative flex-1">
-                <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <Globe
+                  className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2"
+                  style={{ color: "var(--md-on-surface-variant)" }}
+                />
                 <input
                   type="url"
                   required
@@ -140,14 +160,14 @@ export function AddDownloadModal({
                     }
                   }}
                   placeholder="https://example.com/large-file.iso"
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-9 pr-3 text-sm text-slate-100 placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+                  className="md-input w-full rounded-xl py-2.5 pl-10 pr-3.5 text-sm"
                 />
               </div>
               <button
                 type="button"
                 onClick={handleProbe}
                 disabled={probing || !url.trim()}
-                className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                className="md-btn-tonal flex items-center gap-1.5 rounded-full px-4 text-xs font-medium"
               >
                 {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                 Probe
@@ -155,38 +175,61 @@ export function AddDownloadModal({
             </div>
           </div>
 
+          {/* Probe Result Card */}
           {probe && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950/70 px-3.5 py-2.5 text-xs">
+            <div
+              className="flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3 text-xs"
+              style={{ backgroundColor: "var(--md-surface-container)" }}
+            >
               <div className="flex items-center gap-3">
-                <span className="text-slate-400">
+                <span style={{ color: "var(--md-on-surface-variant)" }}>
                   Size:{" "}
-                  <strong className="font-semibold text-slate-100">
+                  <strong className="font-semibold" style={{ color: "var(--md-on-surface)" }}>
                     {formatBytes(probe.totalSize)}
                   </strong>
                 </span>
                 {probe.contentType && (
-                  <span className="text-slate-500 truncate max-w-[180px]">
+                  <span
+                    className="truncate max-w-[180px]"
+                    style={{ color: "var(--md-on-surface-variant)" }}
+                  >
                     {probe.contentType.split(";")[0]}
                   </span>
                 )}
               </div>
               {probe.supportsRange ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-0.5 font-medium text-emerald-400">
-                  <Zap className="h-3 w-3" />
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-medium"
+                  style={{
+                    backgroundColor: "var(--md-tertiary-container)",
+                    color: "var(--md-on-tertiary-container)",
+                  }}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
                   Dynamic Multi-Segment Ready
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2.5 py-0.5 font-medium text-amber-400">
-                  <ShieldAlert className="h-3 w-3" />
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 font-medium"
+                  style={{
+                    backgroundColor: "var(--md-warning-container)",
+                    color: "var(--md-on-warning-container)",
+                  }}
+                >
+                  <ShieldAlert className="h-3.5 w-3.5" />
                   Single Stream Only
                 </span>
               )}
             </div>
           )}
 
+          {/* Filename & Connections */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-300">
+              <label
+                className="mb-1.5 block text-xs font-medium"
+                style={{ color: "var(--md-on-surface-variant)" }}
+              >
                 File Name
               </label>
               <input
@@ -194,43 +237,61 @@ export function AddDownloadModal({
                 value={fileName}
                 onChange={(e) => setFileName(e.target.value)}
                 placeholder="Auto-detected from server"
-                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-sky-500 focus:outline-none"
+                className="md-input w-full rounded-xl px-3.5 py-2.5 text-sm"
               />
             </div>
 
             <div>
-              <label className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-300">
+              <label
+                className="mb-1.5 flex items-center justify-between text-xs font-medium"
+                style={{ color: "var(--md-on-surface-variant)" }}
+              >
                 <span>Max Connections</span>
-                <span className="font-mono text-sky-400">{maxConnections}</span>
+                <span
+                  className="rounded-full px-2 py-0.5 font-mono text-[11px] font-semibold"
+                  style={{
+                    backgroundColor: "var(--md-primary-container)",
+                    color: "var(--md-on-primary-container)",
+                  }}
+                >
+                  {maxConnections}
+                </span>
               </label>
-              <div className="flex h-[38px] items-center gap-3 rounded-lg border border-slate-700 bg-slate-950 px-3">
+              <div
+                className="flex h-[42px] items-center rounded-xl px-3.5"
+                style={{ backgroundColor: "var(--md-surface-container)" }}
+              >
                 <input
                   type="range"
                   min={1}
                   max={16}
                   value={maxConnections}
                   onChange={(e) => setMaxConnections(Number(e.target.value))}
-                  className="w-full accent-sky-500"
+                  className="md-slider w-full"
                 />
               </div>
             </div>
           </div>
 
+          {/* Save Directory */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-300">
-              Save Directory
+            <label
+              className="mb-1.5 block text-xs font-medium"
+              style={{ color: "var(--md-on-surface-variant)" }}
+            >
+              Save Folder
             </label>
-            <div className="flex gap-2">
+            <div className="flex gap-2.5">
               <input
                 type="text"
                 value={saveDir}
                 onChange={(e) => setSaveDir(e.target.value)}
-                className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                className="md-input flex-1 rounded-xl px-3.5 py-2.5 text-sm"
               />
               <button
                 type="button"
                 onClick={handleBrowse}
-                className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                className="md-btn-outlined flex items-center gap-1.5 rounded-full px-4 text-xs font-medium"
               >
                 <FolderOpen className="h-4 w-4" />
                 Browse
@@ -239,25 +300,37 @@ export function AddDownloadModal({
           </div>
 
           {error && (
-            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">
+            <div
+              className="rounded-2xl px-4 py-3 text-xs"
+              style={{
+                backgroundColor: "var(--md-error-container)",
+                color: "var(--md-on-error-container)",
+              }}
+            >
               {error}
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2.5 border-t border-slate-800 pt-4">
+          {/* M3 Dialog Actions */}
+          <div className="flex items-center justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700"
+              className="rounded-full px-5 py-2.5 text-xs font-medium transition-colors hover:bg-white/5"
+              style={{ color: "var(--md-primary)" }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || !url.trim()}
-              className="flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+              className="md-btn-filled flex items-center gap-2 rounded-full px-6 py-2.5 text-xs font-semibold"
             >
-              {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Zap className="h-4 w-4" />
+              )}
               Start Download
             </button>
           </div>

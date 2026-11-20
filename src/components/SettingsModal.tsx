@@ -67,24 +67,45 @@ export function SettingsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
-      <div className="w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-800 px-5 py-4">
-          <div className="flex items-center gap-2.5">
-            <SettingsIcon className="h-4 w-4 text-sky-400" />
-            <h2 className="text-sm font-semibold text-slate-100">HyperDM Settings</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4">
+      <div
+        className="w-full max-w-lg rounded-[28px] p-6"
+        style={{
+          backgroundColor: "var(--md-surface-container-high)",
+          boxShadow: "var(--md-shadow-3)",
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-2xl"
+              style={{
+                backgroundColor: "var(--md-secondary-container)",
+                color: "var(--md-on-secondary-container)",
+              }}
+            >
+              <SettingsIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-medium tracking-tight">Settings</h2>
+              <p className="text-xs" style={{ color: "var(--md-on-surface-variant)" }}>
+                Engine, browser bridge & tray preferences
+              </p>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-          >
-            <X className="h-4 w-4" />
+          <button onClick={onClose} className="md-icon-btn p-2" aria-label="Close">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-4 p-5">
+        <form onSubmit={handleSave} className="mt-5 space-y-4">
+          {/* Default Download Folder */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-300">
+            <label
+              className="mb-1.5 block text-xs font-medium"
+              style={{ color: "var(--md-on-surface-variant)" }}
+            >
               Default Download Folder
             </label>
             <div className="flex gap-2">
@@ -92,12 +113,12 @@ export function SettingsModal({
                 type="text"
                 value={defaultSaveDir}
                 onChange={(e) => setDefaultSaveDir(e.target.value)}
-                className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-sky-500 focus:outline-none"
+                className="md-input flex-1 rounded-xl px-3.5 py-2.5 text-sm"
               />
               <button
                 type="button"
                 onClick={handleBrowse}
-                className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700"
+                className="md-btn-outlined flex items-center gap-1.5 rounded-full px-4 text-xs font-medium"
               >
                 <FolderOpen className="h-4 w-4" />
                 Browse
@@ -105,109 +126,137 @@ export function SettingsModal({
             </div>
           </div>
 
-          <div>
-            <label className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-300">
-              <span>Default Max Connections per Download</span>
-              <span className="font-mono text-sky-400">{maxConnections}</span>
-            </label>
-            <input
-              type="range"
-              min={1}
-              max={16}
-              value={maxConnections}
-              onChange={(e) => setMaxConnections(Number(e.target.value))}
-              className="w-full accent-sky-500"
-            />
-            <p className="mt-1 text-[11px] text-slate-500">
-              IDM-style default is 8 connections. Higher values can improve speed on high-latency links.
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1.5 flex items-center justify-between text-xs font-medium text-slate-300">
-              <span>Minimum Dynamic Split Size</span>
-              <span className="font-mono text-sky-400">{minSplitKb} KB</span>
-            </label>
-            <input
-              type="range"
-              min={128}
-              max={4096}
-              step={128}
-              value={minSplitKb}
-              onChange={(e) => setMinSplitKb(Number(e.target.value))}
-              className="w-full accent-sky-500"
-            />
-            <p className="mt-1 text-[11px] text-slate-500">
-              Idle workers split an active segment in half whenever its remaining tail exceeds this threshold.
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3.5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs font-semibold text-slate-200">
-                  Browser Extension Bridge
-                </div>
-                <div className="text-[11px] text-slate-500">
-                  Accept intercepted downloads from Chrome, Brave, Edge & Firefox
-                </div>
+          {/* Performance Sliders Card */}
+          <div
+            className="space-y-4 rounded-2xl p-4"
+            style={{ backgroundColor: "var(--md-surface-container)" }}
+          >
+            <div>
+              <div className="mb-2 flex items-center justify-between text-xs font-medium">
+                <span>Max Connections per Download</span>
+                <span
+                  className="rounded-full px-2.5 py-0.5 font-mono text-[11px] font-semibold"
+                  style={{
+                    backgroundColor: "var(--md-primary-container)",
+                    color: "var(--md-on-primary-container)",
+                  }}
+                >
+                  {maxConnections}
+                </span>
               </div>
               <input
-                type="checkbox"
-                checked={bridgeEnabled}
-                onChange={(e) => setBridgeEnabled(e.target.checked)}
-                className="h-4 w-4 accent-sky-500"
+                type="range"
+                min={1}
+                max={16}
+                value={maxConnections}
+                onChange={(e) => setMaxConnections(Number(e.target.value))}
+                className="md-slider w-full"
               />
             </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between text-xs font-medium">
+                <span>Minimum Dynamic Split Size</span>
+                <span
+                  className="rounded-full px-2.5 py-0.5 font-mono text-[11px] font-semibold"
+                  style={{
+                    backgroundColor: "var(--md-primary-container)",
+                    color: "var(--md-on-primary-container)",
+                  }}
+                >
+                  {minSplitKb} KB
+                </span>
+              </div>
+              <input
+                type="range"
+                min={128}
+                max={4096}
+                step={128}
+                value={minSplitKb}
+                onChange={(e) => setMinSplitKb(Number(e.target.value))}
+                className="md-slider w-full"
+              />
+            </div>
+          </div>
+
+          {/* Browser Extension Bridge */}
+          <div
+            className="space-y-3 rounded-2xl p-4"
+            style={{ backgroundColor: "var(--md-surface-container)" }}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-xs font-medium">Browser Extension Bridge</div>
+                <div className="text-[11px]" style={{ color: "var(--md-on-surface-variant)" }}>
+                  Intercept downloads from Chrome, Brave, Edge & Firefox
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={bridgeEnabled}
+                data-checked={bridgeEnabled}
+                onClick={() => setBridgeEnabled((v) => !v)}
+                className="md-switch"
+              >
+                <span className="md-switch-thumb" />
+              </button>
+            </div>
+
             <div className="flex items-center justify-between gap-3 text-xs">
-              <span className="text-slate-400">Local Bridge Port (restart to apply)</span>
+              <span style={{ color: "var(--md-on-surface-variant)" }}>
+                Local Bridge Port (restart to apply)
+              </span>
               <input
                 type="number"
                 min={1024}
                 max={65535}
                 value={bridgePort}
                 onChange={(e) => setBridgePort(Number(e.target.value) || 41920)}
-                className="w-24 rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-right font-mono text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                className="md-input w-24 rounded-xl px-3 py-1.5 text-right font-mono text-xs"
               />
             </div>
-            <p className="text-[11px] text-slate-500">
-              Load <code className="text-sky-400">browser-extension/</code> via{" "}
-              <code className="text-slate-300">chrome://extensions</code> (Developer Mode → Load unpacked) or Firefox{" "}
-              <code className="text-slate-300">about:debugging</code>.
-            </p>
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/60 p-3.5">
+          {/* System Tray Switch */}
+          <div
+            className="flex items-center justify-between gap-4 rounded-2xl p-4"
+            style={{ backgroundColor: "var(--md-surface-container)" }}
+          >
             <div>
-              <div className="text-xs font-semibold text-slate-200">
-                Close Window to System Tray
-              </div>
-              <div className="text-[11px] text-slate-500">
-                Keep downloads & browser bridge running in the background when closed
+              <div className="text-xs font-medium">Close Window to System Tray</div>
+              <div className="text-[11px]" style={{ color: "var(--md-on-surface-variant)" }}>
+                Keep downloads & browser bridge running in the background
               </div>
             </div>
-            <input
-              type="checkbox"
-              checked={minimizeToTray}
-              onChange={(e) => setMinimizeToTray(e.target.checked)}
-              className="h-4 w-4 accent-sky-500"
-            />
+            <button
+              type="button"
+              role="switch"
+              aria-checked={minimizeToTray}
+              data-checked={minimizeToTray}
+              onClick={() => setMinimizeToTray((v) => !v)}
+              className="md-switch"
+            >
+              <span className="md-switch-thumb" />
+            </button>
           </div>
 
-          <div className="flex justify-end gap-2.5 border-t border-slate-800 pt-4">
+          {/* Footer Actions */}
+          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700"
+              className="rounded-full px-5 py-2.5 text-xs font-medium transition-colors hover:bg-white/5"
+              style={{ color: "var(--md-primary)" }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-sky-500 px-4 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
+              className="md-btn-filled rounded-full px-6 py-2.5 text-xs font-semibold"
             >
-              Save Settings
+              Save Changes
             </button>
           </div>
         </form>
