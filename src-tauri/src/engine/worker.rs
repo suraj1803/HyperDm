@@ -1,0 +1,377 @@
+use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
+use std::os::unix::fs::FileExt;
+use std::sync::{atomic::Ordering, Arc};
+use std::time::{Duration, Instant};
+
+use futures_util::StreamExt;
+use reqwest::{header, Client};
+use tokio_util::sync::CancellationToken;
+
+use crate::engine::models::{DownloadError, SegmentStatus};
+use crate::engine::prober::build_header_map;
+use crate::engine::segment::LiveSegment;
+
+const MAX_RETRIES: u32 = 5;
+const WRITE_BUFFER_THRESHOLD: usize = 128 * 1024; // 128 KiB buffered flush to minimize syscalls
+
+#[derive(Debug)]
+pub enum WorkerOutcome {
+    Completed { segment_id: u32 },
+    Paused { segment_id: u32 },
+    Failed { segment_id: u32, error: String },
+}
+
+/// Runs a single HTTP Range worker for `segment`.
+/// Dynamically respects `segment`'s upper bound if another worker splits it mid-flight.
+pub async fn run_range_worker(
+    client: Client,
+    url: String,
+    etag: Option<String>,
+    custom_headers: HashMap<String, String>,
+    file: Arc<File>,
+    segment: Arc<LiveSegment>,
+    cancel: CancellationToken,
+) -> WorkerOutcome {
+    let seg_id = segment.id;
+    let extra_headers = build_header_map(&custom_headers);
+    let mut attempt: u32 = 0;
+
+    loop {
+        if cancel.is_cancelled() {
+            segment.speed_bps.store(0, Ordering::Relaxed);
+            if !segment.is_complete() {
+                segment.set_status(SegmentStatus::Paused);
+            }
+            return WorkerOutcome::Paused { segment_id: seg_id };
+        }
+
+        let Some((range_start, range_end)) = segment.next_range() else {
+            segment.speed_bps.store(0, Ordering::Relaxed);
+            segment.set_status(SegmentStatus::Completed);
+            return WorkerOutcome::Completed { segment_id: seg_id };
+        };
+
+        segment.set_status(SegmentStatus::Connecting);
+
+        let mut req = client
+            .get(&url)
+            .headers(extra_headers.clone())
+            .header(header::RANGE, format!("bytes={}-{}", range_start, range_end));
+        if let Some(ref tag) = etag {
+            req = req.header(header::IF_RANGE, tag);
+        }
+
+        let resp_res = tokio::select! {
+            _ = cancel.cancelled() => {
+                segment.speed_bps.store(0, Ordering::Relaxed);
+                segment.set_status(SegmentStatus::Paused);
+                return WorkerOutcome::Paused { segment_id: seg_id };
+            }
+            res = req.send() => res,
+        };
+
+        let resp = match resp_res {
+            Ok(r) => {
+                let code = r.status().as_u16();
+                if code != 206 && !(code == 200 && range_start == 0) {
+                    attempt += 1;
+                    segment.retries.store(attempt, Ordering::Relaxed);
+                    if attempt > MAX_RETRIES {
+                        segment.speed_bps.store(0, Ordering::Relaxed);
+                        segment.set_status(SegmentStatus::Error);
+                        return WorkerOutcome::Failed {
+                            segment_id: seg_id,
+                            error: format!("Unexpected HTTP status {} for range request", code),
+                        };
+                    }
+                    if !backoff_wait(attempt, &cancel).await {
+                        segment.set_status(SegmentStatus::Paused);
+                        return WorkerOutcome::Paused { segment_id: seg_id };
+                    }
+                    continue;
+                }
+                r
+            }
+            Err(err) => {
+                attempt += 1;
+                segment.retries.store(attempt, Ordering::Relaxed);
+                if attempt > MAX_RETRIES {
+                    segment.speed_bps.store(0, Ordering::Relaxed);
+                    segment.set_status(SegmentStatus::Error);
+                    return WorkerOutcome::Failed {
+                        segment_id: seg_id,
+                        error: err.to_string(),
+                    };
+                }
+                if !backoff_wait(attempt, &cancel).await {
+                    segment.set_status(SegmentStatus::Paused);
+                    return WorkerOutcome::Paused { segment_id: seg_id };
+                }
+                continue;
+            }
+        };
+
+        segment.set_status(SegmentStatus::Downloading);
+        let mut stream = resp.bytes_stream();
+        let mut write_buf: Vec<u8> = Vec::with_capacity(WRITE_BUFFER_THRESHOLD + 65536);
+
+        let mut window_start = Instant::now();
+        let mut window_bytes: u64 = 0;
+        let mut stream_err: Option<String> = None;
+        let mut reached_end = false;
+
+        loop {
+            let next_chunk = tokio::select! {
+                _ = cancel.cancelled() => {
+                    // Flush whatever is buffered before pausing
+                    let _ = flush_buffer(&file, &segment, &mut write_buf).await;
+                    segment.speed_bps.store(0, Ordering::Relaxed);
+                    if segment.is_complete() {
+                        segment.set_status(SegmentStatus::Completed);
+                        return WorkerOutcome::Completed { segment_id: seg_id };
+                    } else {
+                        segment.set_status(SegmentStatus::Paused);
+                        return WorkerOutcome::Paused { segment_id: seg_id };
+                    }
+                }
+                chunk = stream.next() => chunk,
+            };
+
+            match next_chunk {
+                Some(Ok(bytes)) => {
+                    if bytes.is_empty() {
+                        continue;
+                    }
+                    // Reset retry counter once we are actively receiving data
+                    attempt = 0;
+
+                    write_buf.extend_from_slice(&bytes);
+                    window_bytes += bytes.len() as u64;
+
+                    let elapsed = window_start.elapsed();
+                    if elapsed >= Duration::from_millis(200) {
+                        let bps = (window_bytes as f64 / elapsed.as_secs_f64()) as u64;
+                        segment.speed_bps.store(bps, Ordering::Relaxed);
+                        window_start = Instant::now();
+                        window_bytes = 0;
+                    }
+
+                    if write_buf.len() >= WRITE_BUFFER_THRESHOLD {
+                        match flush_buffer(&file, &segment, &mut write_buf).await {
+                            Ok(hit_bound) => {
+                                if hit_bound {
+                                    reached_end = true;
+                                    break;
+                                }
+                            }
+                            Err(e) => {
+                                segment.speed_bps.store(0, Ordering::Relaxed);
+                                segment.set_status(SegmentStatus::Error);
+                                return WorkerOutcome::Failed {
+                                    segment_id: seg_id,
+                                    error: e.to_string(),
+                                };
+                            }
+                        }
+                    }
+                }
+                Some(Err(e)) => {
+                    let _ = flush_buffer(&file, &segment, &mut write_buf).await;
+                    stream_err = Some(e.to_string());
+                    break;
+                }
+                None => {
+                    // Stream finished cleanly; flush remaining buffer
+                    if let Err(e) = flush_buffer(&file, &segment, &mut write_buf).await {
+                        segment.speed_bps.store(0, Ordering::Relaxed);
+                        segment.set_status(SegmentStatus::Error);
+                        return WorkerOutcome::Failed {
+                            segment_id: seg_id,
+                            error: e.to_string(),
+                        };
+                    }
+                    break;
+                }
+            }
+        }
+
+        if reached_end || segment.is_complete() {
+            segment.speed_bps.store(0, Ordering::Relaxed);
+            segment.set_status(SegmentStatus::Completed);
+            return WorkerOutcome::Completed { segment_id: seg_id };
+        }
+
+        // Stream ended prematurely or errored -> retry from updated offset
+        attempt += 1;
+        segment.retries.store(attempt, Ordering::Relaxed);
+        if attempt > MAX_RETRIES {
+            segment.speed_bps.store(0, Ordering::Relaxed);
+            segment.set_status(SegmentStatus::Error);
+            return WorkerOutcome::Failed {
+                segment_id: seg_id,
+                error: stream_err.unwrap_or_else(|| "Connection closed prematurely".to_string()),
+            };
+        }
+        if !backoff_wait(attempt, &cancel).await {
+            segment.speed_bps.store(0, Ordering::Relaxed);
+            segment.set_status(SegmentStatus::Paused);
+            return WorkerOutcome::Paused { segment_id: seg_id };
+        }
+    }
+}
+
+/// Flushes `buf` to disk at the segment's exact offset using `write_all_at`.
+/// Returns `Ok(true)` if the segment reached its (possibly dynamically shrunk) upper bound.
+async fn flush_buffer(
+    file: &Arc<File>,
+    segment: &Arc<LiveSegment>,
+    buf: &mut Vec<u8>,
+) -> Result<bool, DownloadError> {
+    if buf.is_empty() {
+        return Ok(segment.is_complete());
+    }
+
+    let req_len = buf.len() as u64;
+    let Some((write_offset, allowed_len)) = segment.reserve_write(req_len) else {
+        buf.clear();
+        return Ok(true);
+    };
+
+    let to_write = allowed_len as usize;
+    let payload: Vec<u8> = buf[..to_write].to_vec();
+    let hit_bound = to_write < buf.len();
+    buf.clear();
+
+    let file_clone = Arc::clone(file);
+    let write_res = tokio::task::spawn_blocking(move || file_clone.write_all_at(&payload, write_offset))
+        .await
+        .map_err(|e| DownloadError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+    match write_res {
+        Ok(()) => {
+            segment.commit_write(allowed_len);
+            Ok(hit_bound || segment.is_complete())
+        }
+        Err(e) => {
+            segment.rollback_write(allowed_len);
+            Err(DownloadError::Io(e))
+        }
+    }
+}
+
+/// Single-stream fallback worker for servers that do not support HTTP Range requests
+/// or do not provide Content-Length.
+pub async fn run_single_stream_worker(
+    client: Client,
+    url: String,
+    custom_headers: HashMap<String, String>,
+    part_path: std::path::PathBuf,
+    segment: Arc<LiveSegment>,
+    cancel: CancellationToken,
+) -> WorkerOutcome {
+    let seg_id = segment.id;
+    segment.set_status(SegmentStatus::Connecting);
+    let extra_headers = build_header_map(&custom_headers);
+
+    let resp_res = tokio::select! {
+        _ = cancel.cancelled() => {
+            segment.set_status(SegmentStatus::Paused);
+            return WorkerOutcome::Paused { segment_id: seg_id };
+        }
+        res = client.get(&url).headers(extra_headers).send() => res,
+    };
+
+    let resp = match resp_res {
+        Ok(r) if r.status().is_success() => r,
+        Ok(r) => {
+            segment.set_status(SegmentStatus::Error);
+            return WorkerOutcome::Failed {
+                segment_id: seg_id,
+                error: format!("HTTP status {}", r.status().as_u16()),
+            };
+        }
+        Err(e) => {
+            segment.set_status(SegmentStatus::Error);
+            return WorkerOutcome::Failed {
+                segment_id: seg_id,
+                error: e.to_string(),
+            };
+        }
+    };
+
+    let mut file = match File::create(&part_path) {
+        Ok(f) => f,
+        Err(e) => {
+            segment.set_status(SegmentStatus::Error);
+            return WorkerOutcome::Failed {
+                segment_id: seg_id,
+                error: e.to_string(),
+            };
+        }
+    };
+
+    segment.set_status(SegmentStatus::Downloading);
+    let mut stream = resp.bytes_stream();
+    let mut window_start = Instant::now();
+    let mut window_bytes: u64 = 0;
+
+    loop {
+        let next_chunk = tokio::select! {
+            _ = cancel.cancelled() => {
+                let _ = file.flush();
+                segment.speed_bps.store(0, Ordering::Relaxed);
+                segment.set_status(SegmentStatus::Paused);
+                return WorkerOutcome::Paused { segment_id: seg_id };
+            }
+            chunk = stream.next() => chunk,
+        };
+
+        match next_chunk {
+            Some(Ok(bytes)) => {
+                if let Err(e) = file.write_all(&bytes) {
+                    segment.speed_bps.store(0, Ordering::Relaxed);
+                    segment.set_status(SegmentStatus::Error);
+                    return WorkerOutcome::Failed {
+                        segment_id: seg_id,
+                        error: e.to_string(),
+                    };
+                }
+                let len = bytes.len() as u64;
+                segment.advance_unbounded(len);
+                window_bytes += len;
+
+                let elapsed = window_start.elapsed();
+                if elapsed >= Duration::from_millis(200) {
+                    let bps = (window_bytes as f64 / elapsed.as_secs_f64()) as u64;
+                    segment.speed_bps.store(bps, Ordering::Relaxed);
+                    window_start = Instant::now();
+                    window_bytes = 0;
+                }
+            }
+            Some(Err(e)) => {
+                segment.speed_bps.store(0, Ordering::Relaxed);
+                segment.set_status(SegmentStatus::Error);
+                return WorkerOutcome::Failed {
+                    segment_id: seg_id,
+                    error: e.to_string(),
+                };
+            }
+            None => {
+                let _ = file.sync_all();
+                segment.speed_bps.store(0, Ordering::Relaxed);
+                segment.set_status(SegmentStatus::Completed);
+                return WorkerOutcome::Completed { segment_id: seg_id };
+            }
+        }
+    }
+}
+
+async fn backoff_wait(attempt: u32, cancel: &CancellationToken) -> bool {
+    let delay_ms = (250u64 * (1u64 << (attempt.min(5) - 1))).min(5000);
+    tokio::select! {
+        _ = cancel.cancelled() => false,
+        _ = tokio::time::sleep(Duration::from_millis(delay_ms)) => true,
+    }
+}
