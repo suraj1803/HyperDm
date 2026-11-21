@@ -32,15 +32,15 @@ interface SegmentProgressModalProps {
 function segmentColorVar(status: SegmentStatus): string {
   switch (status) {
     case "completed":
-      return "var(--md-tertiary)";
+      return "var(--success)";
     case "downloading":
-      return "var(--md-primary)";
+      return "var(--accent)";
     case "connecting":
-      return "var(--md-warning)";
+      return "var(--warning)";
     case "error":
-      return "var(--md-error)";
+      return "var(--danger)";
     default:
-      return "var(--md-outline)";
+      return "var(--text-muted)";
   }
 }
 
@@ -58,6 +58,15 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
     }
   }, [task?.downloaded, task?.speedBps, task?.status]);
 
+  useEffect(() => {
+    if (!task) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [task, onClose]);
+
   if (!task) return null;
 
   const pct = progressPercent(task.downloaded, task.totalSize);
@@ -71,158 +80,138 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
   const sparklinePoints = speedHistory
     .map((v, i) => {
       const x = speedHistory.length <= 1 ? 300 : (i / (speedHistory.length - 1)) * 300;
-      const y = 44 - (v / maxSpeed) * 38;
+      const y = 38 - (v / maxSpeed) * 32;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
 
   const areaPoints =
-    speedHistory.length > 1 ? `0,46 ${sparklinePoints} 300,46` : "";
+    speedHistory.length > 1 ? `0,40 ${sparklinePoints} 300,40` : "";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4">
       <div
-        className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px]"
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-[8px]"
         style={{
-          backgroundColor: "var(--md-surface-container-high)",
-          boxShadow: "var(--md-shadow-3)",
+          backgroundColor: "var(--bg-elevated)",
+          boxShadow: "var(--shadow-modal)",
         }}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4">
-          <div className="flex min-w-0 items-center gap-3.5">
-            <div
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
-              style={{
-                backgroundColor: "var(--md-primary-container)",
-                color: "var(--md-on-primary-container)",
-              }}
-            >
-              <Zap className="h-5 w-5" />
-            </div>
+        {/* Header Bar */}
+        <div
+          className="flex shrink-0 items-center justify-between gap-3 px-4 py-2.5"
+          style={{ borderBottom: "1px solid var(--border-subtle)" }}
+        >
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Zap className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--accent-text)" }} />
             <div className="min-w-0">
-              <h2 className="truncate text-base font-medium tracking-tight">
+              <h2 className="truncate text-[13px] font-semibold leading-tight">
                 {task.fileName}
               </h2>
               <p
-                className="mt-0.5 truncate text-xs"
-                style={{ color: "var(--md-on-surface-variant)" }}
+                className="truncate font-mono text-[10.5px] leading-tight mt-0.5"
+                style={{ color: "var(--text-muted)" }}
               >
                 {task.url}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="md-icon-btn p-2" aria-label="Close">
-            <X className="h-5 w-5" />
+          <button
+            onClick={onClose}
+            className="ui-btn-ghost flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] cursor-pointer"
+            aria-label="Close"
+          >
+            <X className="h-3.5 w-3.5" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 space-y-4 overflow-y-auto px-6 pb-5">
-          {/* M3 Tonal Metric Cards */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <div
-              className="rounded-2xl p-3.5"
-              style={{ backgroundColor: "var(--md-surface-container)" }}
-            >
-              <div
-                className="text-[11px] font-medium"
-                style={{ color: "var(--md-on-surface-variant)" }}
-              >
-                Transfer Rate
-              </div>
-              <div
-                className="mt-1 text-lg font-semibold tabular-nums"
-                style={{ color: "var(--md-primary)" }}
-              >
-                {formatSpeed(task.speedBps)}
-              </div>
+        {/* 4-Column Compact Telemetry Strip */}
+        <div
+          className="grid shrink-0 grid-cols-4 divide-x"
+          style={{
+            backgroundColor: "var(--bg-sidebar)",
+            borderBottom: "1px solid var(--border-subtle)",
+            borderColor: "var(--border-subtle)",
+          }}
+        >
+          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              Speed
             </div>
-
             <div
-              className="rounded-2xl p-3.5"
-              style={{ backgroundColor: "var(--md-surface-container)" }}
+              className="mt-0.5 font-mono text-[14px] font-semibold tabular-nums"
+              style={{ color: "var(--accent-text)" }}
             >
-              <div
-                className="text-[11px] font-medium"
-                style={{ color: "var(--md-on-surface-variant)" }}
-              >
-                Downloaded
-              </div>
-              <div className="mt-1 text-sm font-semibold tabular-nums">
-                {formatBytes(task.downloaded)}
-                <span
-                  className="block text-[11px] font-normal"
-                  style={{ color: "var(--md-on-surface-variant)" }}
-                >
-                  of {formatBytes(task.totalSize)}
-                </span>
-              </div>
-            </div>
-
-            <div
-              className="rounded-2xl p-3.5"
-              style={{ backgroundColor: "var(--md-surface-container)" }}
-            >
-              <div
-                className="text-[11px] font-medium"
-                style={{ color: "var(--md-on-surface-variant)" }}
-              >
-                Time Left
-              </div>
-              <div className="mt-1 text-base font-semibold tabular-nums">
-                {task.status === "completed" ? "Done" : formatEta(task.etaSeconds)}
-              </div>
-            </div>
-
-            <div
-              className="rounded-2xl p-3.5"
-              style={{ backgroundColor: "var(--md-surface-container)" }}
-            >
-              <div
-                className="flex items-center gap-1 text-[11px] font-medium"
-                style={{ color: "var(--md-on-surface-variant)" }}
-              >
-                <Split className="h-3.5 w-3.5" style={{ color: "var(--md-tertiary)" }} />
-                Dynamic Splits
-              </div>
-              <div
-                className="mt-1 text-base font-semibold tabular-nums"
-                style={{ color: "var(--md-tertiary)" }}
-              >
-                {task.dynamicSplits}{" "}
-                <span
-                  className="text-xs font-normal"
-                  style={{ color: "var(--md-on-surface-variant)" }}
-                >
-                  ({activeSegments} active)
-                </span>
-              </div>
+              {formatSpeed(task.speedBps)}
             </div>
           </div>
 
-          {/* Overall Progress + Live Speed Sparkline */}
+          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              Transferred
+            </div>
+            <div className="mt-0.5 font-mono text-[12px] font-medium tabular-nums">
+              {formatBytes(task.downloaded)}
+              <span style={{ color: "var(--text-muted)" }}> / {formatBytes(task.totalSize)}</span>
+            </div>
+          </div>
+
+          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+              ETA
+            </div>
+            <div className="mt-0.5 font-mono text-[13px] font-medium tabular-nums">
+              {task.status === "completed" ? "Done" : formatEta(task.etaSeconds)}
+            </div>
+          </div>
+
+          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+            <div
+              className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider"
+              style={{ color: "var(--text-muted)" }}
+            >
+              <Split className="h-2.5 w-2.5" style={{ color: "var(--success)" }} />
+              Splits
+            </div>
+            <div
+              className="mt-0.5 font-mono text-[13px] font-medium tabular-nums"
+              style={{ color: "var(--success)" }}
+            >
+              {task.dynamicSplits}{" "}
+              <span className="text-[11px] font-normal" style={{ color: "var(--text-muted)" }}>
+                ({activeSegments} active)
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          {/* Overall Progress + Live Sparkline */}
           <div
-            className="rounded-2xl p-4"
-            style={{ backgroundColor: "var(--md-surface-container)" }}
+            className="rounded-[6px] p-3"
+            style={{
+              backgroundColor: "var(--bg-subtle)",
+              border: "1px solid var(--border-subtle)",
+            }}
           >
-            <div className="mb-2.5 flex items-center justify-between text-xs">
+            <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
               <span className="font-medium">
-                Overall Progress ·{" "}
-                <span className="capitalize" style={{ color: "var(--md-on-surface-variant)" }}>
-                  {task.status}
+                Overall Progress{" "}
+                <span className="capitalize" style={{ color: "var(--text-muted)" }}>
+                  · {task.status}
                 </span>
               </span>
               <span
                 className="font-mono font-semibold tabular-nums"
-                style={{ color: "var(--md-primary)" }}
+                style={{ color: "var(--accent-text)" }}
               >
                 {pct.toFixed(2)}%
               </span>
             </div>
             <div
-              className="h-2.5 w-full overflow-hidden rounded-full"
-              style={{ backgroundColor: "var(--md-surface-container-highest)" }}
+              className="h-1.5 w-full overflow-hidden rounded-full"
+              style={{ backgroundColor: "var(--bg-active)" }}
             >
               <div
                 className="h-full rounded-full transition-all duration-150"
@@ -230,37 +219,37 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
                   width: `${pct}%`,
                   backgroundColor:
                     task.status === "completed"
-                      ? "var(--md-tertiary)"
+                      ? "var(--success)"
                       : task.status === "error"
-                      ? "var(--md-error)"
-                      : "var(--md-primary)",
+                      ? "var(--danger)"
+                      : "var(--accent)",
                 }}
               />
             </div>
 
             {speedHistory.length > 1 && (
-              <div className="mt-4 flex items-center justify-between gap-4">
+              <div className="mt-3 flex items-center justify-between gap-4">
                 <div
-                  className="flex items-center gap-1.5 text-xs"
-                  style={{ color: "var(--md-on-surface-variant)" }}
+                  className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums"
+                  style={{ color: "var(--text-secondary)" }}
                 >
-                  <Activity className="h-3.5 w-3.5" style={{ color: "var(--md-primary)" }} />
-                  Peak: <strong style={{ color: "var(--md-on-surface)" }}>{formatSpeed(maxSpeed)}</strong>
+                  <Activity className="h-3 w-3" style={{ color: "var(--accent-text)" }} />
+                  Peak <strong style={{ color: "var(--text-primary)" }}>{formatSpeed(maxSpeed)}</strong>
                 </div>
                 <svg
-                  viewBox="0 0 300 46"
-                  className="h-11 w-60 overflow-visible"
+                  viewBox="0 0 300 40"
+                  className="h-9 w-56 overflow-visible"
                   preserveAspectRatio="none"
                 >
                   <polygon
                     points={areaPoints}
-                    fill="var(--md-primary)"
-                    fillOpacity="0.14"
+                    fill="var(--accent)"
+                    fillOpacity="0.18"
                   />
                   <polyline
                     fill="none"
-                    stroke="var(--md-primary)"
-                    strokeWidth="2.2"
+                    stroke="var(--accent-text)"
+                    strokeWidth="1.8"
                     strokeLinejoin="round"
                     strokeLinecap="round"
                     points={sparklinePoints}
@@ -270,24 +259,30 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
             )}
           </div>
 
-          {/* Multi-Segment Visualizer Bar */}
+          {/* Dynamic File Segmentation Map */}
           <div
-            className="rounded-2xl p-4"
-            style={{ backgroundColor: "var(--md-surface-container)" }}
+            className="rounded-[6px] p-3"
+            style={{
+              backgroundColor: "var(--bg-subtle)",
+              border: "1px solid var(--border-subtle)",
+            }}
           >
-            <div className="mb-2.5 flex items-center justify-between text-xs">
+            <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
               <span className="font-medium">Dynamic File Segmentation Map</span>
-              <span style={{ color: "var(--md-on-surface-variant)" }}>
+              <span className="font-mono text-[11px]" style={{ color: "var(--text-muted)" }}>
                 {task.supportsRange
-                  ? `${task.segments.length} segment(s) · work-stealing active`
-                  : "Single-stream mode"}
+                  ? `${task.segments.length} seg · work-stealing`
+                  : "single-stream"}
               </span>
             </div>
 
             {totalSize > 0 && task.segments.length > 0 ? (
               <div
-                className="relative h-7 w-full overflow-hidden rounded-full"
-                style={{ backgroundColor: "var(--md-surface-container-highest)" }}
+                className="relative h-5 w-full overflow-hidden rounded-[4px]"
+                style={{
+                  backgroundColor: "var(--bg-input)",
+                  border: "1px solid var(--border-subtle)",
+                }}
               >
                 {task.segments.map((seg) => {
                   const segLen = Math.max(0, seg.end - seg.start + 1);
@@ -303,7 +298,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
                         style={{
                           left: `${leftPct}%`,
                           width: `${widthPct}%`,
-                          borderLeft: "1.5px solid var(--md-surface-container)",
+                          borderLeft: "1px solid var(--bg-elevated)",
                         }}
                         title={`Segment #${seg.id}: ${formatBytes(seg.downloaded)} / ${formatBytes(segLen)} (${seg.status})`}
                       />
@@ -321,10 +316,11 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
               </div>
             ) : (
               <div
-                className="flex h-7 items-center justify-center rounded-full text-xs"
+                className="flex h-5 items-center justify-center rounded-[4px] font-mono text-[11px]"
                 style={{
-                  backgroundColor: "var(--md-surface-container-highest)",
-                  color: "var(--md-on-surface-variant)",
+                  backgroundColor: "var(--bg-input)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-muted)",
                 }}
               >
                 Waiting for segment allocation…
@@ -334,72 +330,66 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
           {/* Per-Connection Table */}
           <div
-            className="overflow-hidden rounded-2xl"
-            style={{ backgroundColor: "var(--md-surface-container)" }}
+            className="overflow-hidden rounded-[6px]"
+            style={{
+              backgroundColor: "var(--bg-subtle)",
+              border: "1px solid var(--border-subtle)",
+            }}
           >
-            <div
-              className="px-4 py-2.5 text-xs font-medium"
-              style={{
-                borderBottom: "1px solid var(--md-outline-variant)",
-                color: "var(--md-on-surface-variant)",
-              }}
-            >
-              Connection Details
-            </div>
             <div className="max-h-48 overflow-y-auto">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-[11.5px]">
                 <thead
-                  className="sticky top-0 text-[11px]"
+                  className="sticky top-0 text-[10px] uppercase tracking-wider"
                   style={{
-                    backgroundColor: "var(--md-surface-container)",
-                    color: "var(--md-on-surface-variant)",
+                    backgroundColor: "var(--bg-sidebar)",
+                    borderBottom: "1px solid var(--border-subtle)",
+                    color: "var(--text-muted)",
                   }}
                 >
                   <tr>
-                    <th className="px-4 py-2 font-medium">Conn</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Downloaded</th>
-                    <th className="px-3 py-2 font-medium">Range</th>
-                    <th className="px-4 py-2 text-right font-medium">Speed</th>
+                    <th className="px-3 py-1.5 font-medium">Conn</th>
+                    <th className="px-2.5 py-1.5 font-medium">Status</th>
+                    <th className="px-2.5 py-1.5 font-medium">Downloaded</th>
+                    <th className="px-2.5 py-1.5 font-medium">Byte Range</th>
+                    <th className="px-3 py-1.5 text-right font-medium">Speed</th>
                   </tr>
                 </thead>
-                <tbody className="tabular-nums">
+                <tbody className="font-mono text-[11px] tabular-nums">
                   {task.segments.map((seg) => {
                     const segLen =
                       seg.end >= seg.start && totalSize > 0 ? seg.end - seg.start + 1 : null;
                     return (
                       <tr
                         key={seg.id}
-                        style={{ borderTop: "1px solid color-mix(in srgb, var(--md-outline-variant) 45%, transparent)" }}
+                        style={{ borderTop: "1px solid var(--border-subtle)" }}
                       >
-                        <td className="px-4 py-2 font-mono">#{seg.id}</td>
+                        <td className="px-3 py-1.5" style={{ color: "var(--text-muted)" }}>
+                          #{seg.id}
+                        </td>
                         <td
-                          className="px-3 py-2 font-medium capitalize"
+                          className="px-2.5 py-1.5 font-sans text-[11.5px] font-medium capitalize"
                           style={{ color: segmentColorVar(seg.status) }}
                         >
                           {seg.status}
-                          {seg.retries > 0 ? ` (retry ${seg.retries})` : ""}
+                          {seg.retries > 0 ? ` (r${seg.retries})` : ""}
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-2.5 py-1.5">
                           {formatBytes(seg.downloaded)}
                           {segLen !== null ? (
-                            <span style={{ color: "var(--md-on-surface-variant)" }}>
+                            <span style={{ color: "var(--text-muted)" }}>
                               {" "}
                               / {formatBytes(segLen)}
                             </span>
                           ) : null}
                         </td>
-                        <td
-                          className="px-3 py-2 font-mono text-[11px]"
-                          style={{ color: "var(--md-on-surface-variant)" }}
-                        >
+                        <td className="px-2.5 py-1.5" style={{ color: "var(--text-muted)" }}>
                           {totalSize > 0
                             ? `${formatBytes(seg.start)} – ${formatBytes(seg.end)}`
                             : "stream"}
                         </td>
                         <td
-                          className="px-4 py-2 text-right font-mono font-medium"
-                          style={{ color: "var(--md-primary)" }}
+                          className="px-3 py-1.5 text-right font-medium"
+                          style={{ color: "var(--accent-text)" }}
                         >
                           {formatSpeed(seg.speedBps)}
                         </td>
@@ -413,10 +403,11 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
           {task.errorMessage && (
             <div
-              className="rounded-2xl px-4 py-3 text-xs"
+              className="rounded-[6px] px-3 py-2 text-[11.5px]"
               style={{
-                backgroundColor: "var(--md-error-container)",
-                color: "var(--md-on-error-container)",
+                backgroundColor: "var(--danger-soft)",
+                border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)",
+                color: "var(--danger)",
               }}
             >
               <strong>Error:</strong> {task.errorMessage}
@@ -424,29 +415,29 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer Action Bar */}
         <div
-          className="flex items-center justify-between px-6 py-4"
+          className="flex shrink-0 items-center justify-between px-4 py-2.5"
           style={{
-            backgroundColor: "var(--md-surface-container)",
-            borderTop: "1px solid color-mix(in srgb, var(--md-outline-variant) 40%, transparent)",
+            backgroundColor: "var(--bg-sidebar)",
+            borderTop: "1px solid var(--border-subtle)",
           }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {task.status === "downloading" ? (
               <button
                 onClick={() => void pauseDownload(task.id)}
-                className="md-btn-tonal flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium"
+                className="ui-btn-secondary flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
               >
-                <Pause className="h-3.5 w-3.5" />
+                <Pause className="h-3 w-3" />
                 Pause
               </button>
             ) : task.status === "paused" || task.status === "error" ? (
               <button
                 onClick={() => void resumeDownload(task.id)}
-                className="md-btn-filled flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold"
+                className="ui-btn-primary flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
               >
-                <Play className="h-3.5 w-3.5" />
+                <Play className="h-3 w-3" />
                 Resume
               </button>
             ) : null}
@@ -454,10 +445,9 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
             {(task.status === "downloading" || task.status === "paused") && (
               <button
                 onClick={() => void cancelDownload(task.id)}
-                className="md-btn-outlined flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium"
-                style={{ color: "var(--md-error)" }}
+                className="ui-btn-danger flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
               >
-                <Square className="h-3.5 w-3.5" />
+                <Square className="h-3 w-3" />
                 Cancel
               </button>
             )}
@@ -466,16 +456,16 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
               <>
                 <button
                   onClick={() => void openPath(task.fullPath, false)}
-                  className="md-btn-filled flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-semibold"
+                  className="ui-btn-primary flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
+                  <ExternalLink className="h-3 w-3" />
                   Open File
                 </button>
                 <button
                   onClick={() => void openPath(task.fullPath, true)}
-                  className="md-btn-tonal flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-medium"
+                  className="ui-btn-secondary flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
                 >
-                  <FolderOpen className="h-3.5 w-3.5" />
+                  <FolderOpen className="h-3 w-3" />
                   Show in Folder
                 </button>
               </>
@@ -484,8 +474,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
           <button
             onClick={onClose}
-            className="rounded-full px-5 py-2 text-xs font-medium transition-colors hover:bg-white/5"
-            style={{ color: "var(--md-primary)" }}
+            className="ui-btn-secondary h-7 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
           >
             Close
           </button>

@@ -1,27 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
-  BarChart3,
   CheckCircle2,
   Download,
-  FileArchive,
-  FileAudio,
-  FileCode,
-  FileImage,
-  FileText,
-  FileVideo,
-  FolderOpen,
-  HardDrive,
   Layers,
   Moon,
   Pause,
-  Play,
   Plus,
   Search,
   Settings,
   Split,
   Sun,
-  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -37,15 +26,11 @@ import {
   resumeDownload,
 } from "./api/tauri";
 import { AddDownloadModal } from "./components/AddDownloadModal";
+import { DownloadRow } from "./components/DownloadRow";
 import { SegmentProgressModal } from "./components/SegmentProgressModal";
 import { SettingsModal } from "./components/SettingsModal";
-import type { AppSettings, DownloadStatus, DownloadTaskInfo } from "./types/download";
-import {
-  formatBytes,
-  formatEta,
-  formatSpeed,
-  progressPercent,
-} from "./utils/format";
+import type { AppSettings, DownloadTaskInfo } from "./types/download";
+import { formatSpeed } from "./utils/format";
 
 type FilterTab = "all" | "active" | "paused" | "completed";
 type ThemeMode = "dark" | "light";
@@ -60,76 +45,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   minimizeToTray: true,
 };
 
-function getFileIcon(fileName: string) {
-  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
-  if (["zip", "rar", "7z", "tar", "gz", "xz", "bz2", "zst"].includes(ext)) return FileArchive;
-  if (["mp4", "mkv", "webm", "avi", "mov"].includes(ext)) return FileVideo;
-  if (["mp3", "flac", "wav", "ogg", "m4a"].includes(ext)) return FileAudio;
-  if (["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(ext)) return FileImage;
-  if (["iso", "img", "dmg", "appimage", "deb", "rpm", "exe", "msi"].includes(ext)) return HardDrive;
-  if (["pdf", "doc", "docx", "txt", "md", "csv"].includes(ext)) return FileText;
-  if (["js", "ts", "rs", "py", "json", "html", "css"].includes(ext)) return FileCode;
-  return Download;
-}
-
-function getStatusChipStyle(status: DownloadStatus): { label: string; bg: string; fg: string } {
-  switch (status) {
-    case "downloading":
-      return {
-        label: "Downloading",
-        bg: "var(--md-primary-container)",
-        fg: "var(--md-on-primary-container)",
-      };
-    case "muxing":
-      return {
-        label: "Merging…",
-        bg: "var(--md-secondary-container)",
-        fg: "var(--md-on-secondary-container)",
-      };
-    case "completed":
-      return {
-        label: "Completed",
-        bg: "var(--md-tertiary-container)",
-        fg: "var(--md-on-tertiary-container)",
-      };
-    case "paused":
-      return {
-        label: "Paused",
-        bg: "var(--md-warning-container)",
-        fg: "var(--md-on-warning-container)",
-      };
-    case "error":
-      return {
-        label: "Error",
-        bg: "var(--md-error-container)",
-        fg: "var(--md-on-error-container)",
-      };
-    case "probing":
-      return {
-        label: "Probing",
-        bg: "var(--md-secondary-container)",
-        fg: "var(--md-on-secondary-container)",
-      };
-    case "queued":
-      return {
-        label: "Queued",
-        bg: "var(--md-surface-container-highest)",
-        fg: "var(--md-on-surface-variant)",
-      };
-    default:
-      return {
-        label: "Cancelled",
-        bg: "var(--md-surface-container-highest)",
-        fg: "var(--md-on-surface-variant)",
-      };
-  }
-}
-
 export function App() {
   const [tasks, setTasks] = useState<DownloadTaskInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [filter, setFilter] = useState<FilterTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activatedId, setActivatedId] = useState<string | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [confirmDeleteTask, setConfirmDeleteTask] = useState<DownloadTaskInfo | null>(null);
@@ -137,6 +58,8 @@ export function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [pendingYouTubeUrl, setPendingYouTubeUrl] = useState<string | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem("hyperdm-theme");
     return saved === "light" ? "light" : "dark";
@@ -202,7 +125,10 @@ export function App() {
         filter === "all"
           ? true
           : filter === "active"
-          ? t.status === "downloading" || t.status === "queued" || t.status === "probing"
+          ? t.status === "downloading" ||
+            t.status === "queued" ||
+            t.status === "probing" ||
+            t.status === "muxing"
           : filter === "paused"
           ? t.status === "paused" || t.status === "error" || t.status === "cancelled"
           : t.status === "completed";
@@ -215,6 +141,80 @@ export function App() {
       );
     });
   }, [tasks, filter, searchQuery]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        setShowAddModal(true);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+      if (e.key === "Escape") {
+        if (confirmDeleteTask) {
+          setConfirmDeleteTask(null);
+        } else if (selectedId) {
+          setSelectedId(null);
+        }
+        return;
+      }
+
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        showAddModal ||
+        showSettingsModal ||
+        inspectId !== null ||
+        confirmDeleteTask !== null ||
+        filteredTasks.length === 0
+      ) {
+        return;
+      }
+
+      const currentIdx = filteredTasks.findIndex((t) => t.id === selectedId);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const nextIdx = currentIdx < filteredTasks.length - 1 ? currentIdx + 1 : 0;
+        setSelectedId(filteredTasks[nextIdx].id);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const prevIdx = currentIdx > 0 ? currentIdx - 1 : filteredTasks.length - 1;
+        setSelectedId(filteredTasks[prevIdx].id);
+      } else if (e.key === "Enter" && currentIdx !== -1) {
+        e.preventDefault();
+        const target = filteredTasks[currentIdx];
+        if (target.status === "completed") {
+          void openPath(target.fullPath, false);
+        } else {
+          setInspectId(target.id);
+        }
+      } else if (e.key === " " && currentIdx !== -1) {
+        e.preventDefault();
+        const target = filteredTasks[currentIdx];
+        if (target.status === "downloading") {
+          void pauseDownload(target.id);
+        } else if (target.status === "paused" || target.status === "error") {
+          void resumeDownload(target.id);
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    confirmDeleteTask,
+    selectedId,
+    showAddModal,
+    showSettingsModal,
+    inspectId,
+    filteredTasks,
+  ]);
 
   const inspectedTask = useMemo(
     () => tasks.find((t) => t.id === inspectId) ?? null,
@@ -229,11 +229,29 @@ export function App() {
     [tasks]
   );
 
+  const totalActiveConns = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.status === "downloading")
+        .reduce(
+          (acc, t) =>
+            acc +
+            t.segments.filter((s) => s.status === "downloading" || s.status === "connecting")
+              .length,
+          0
+        ),
+    [tasks]
+  );
+
   const counts = useMemo(
     () => ({
       all: tasks.length,
       active: tasks.filter(
-        (t) => t.status === "downloading" || t.status === "queued" || t.status === "probing"
+        (t) =>
+          t.status === "downloading" ||
+          t.status === "queued" ||
+          t.status === "probing" ||
+          t.status === "muxing"
       ).length,
       paused: tasks.filter(
         (t) => t.status === "paused" || t.status === "error" || t.status === "cancelled"
@@ -253,411 +271,349 @@ export function App() {
     setActivatedId(task.id);
     window.setTimeout(() => {
       setActivatedId((curr) => (curr === task.id ? null : curr));
-    }, 280);
+    }, 240);
     void openPath(task.fullPath, task.status !== "completed");
   }
 
+  const navItems = [
+    { id: "all" as const, label: "All Downloads", icon: Layers, count: counts.all },
+    { id: "active" as const, label: "Downloading", icon: Download, count: counts.active },
+    { id: "paused" as const, label: "Paused & Stopped", icon: Pause, count: counts.paused },
+    { id: "completed" as const, label: "Completed", icon: CheckCircle2, count: counts.completed },
+  ];
+
   return (
     <div
-      className="flex h-screen select-none overflow-hidden"
-      style={{ backgroundColor: "var(--md-surface)", color: "var(--md-on-surface)" }}
+      className="flex h-screen flex-col select-none overflow-hidden"
+      style={{ backgroundColor: "var(--bg-app)", color: "var(--text-primary)" }}
     >
-      {/* Material 3 Navigation Drawer */}
-      <aside className="flex w-64 shrink-0 flex-col justify-between px-3 py-4">
-        <div>
-          {/* Brand */}
-          <div className="flex items-center gap-3 px-3 pb-5">
+      {/* Main Workspace Area */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Slim Precision Sidebar */}
+        <aside
+          className="flex w-[192px] shrink-0 flex-col justify-between"
+          style={{
+            backgroundColor: "var(--bg-sidebar)",
+            borderRight: "1px solid var(--border-subtle)",
+          }}
+        >
+          <div>
+            {/* Brand Header */}
             <div
-              className="flex h-10 w-10 items-center justify-center rounded-2xl"
-              style={{
-                backgroundColor: "var(--md-primary)",
-                color: "var(--md-on-primary)",
-                boxShadow: "var(--md-shadow-1)",
-              }}
+              className="flex h-[48px] items-center justify-between px-3.5"
+              style={{ borderBottom: "1px solid var(--border-subtle)" }}
             >
-              <Zap className="h-5 w-5 fill-current" />
-            </div>
-            <div>
-              <div className="text-base font-semibold tracking-tight">HyperDM</div>
-              <div className="text-[11px]" style={{ color: "var(--md-on-surface-variant)" }}>
-                Dynamic Download Engine
-              </div>
-            </div>
-          </div>
-
-          {/* M3 Extended FAB */}
-          <div className="px-1 pb-5">
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="md-fab flex w-full items-center gap-3 rounded-2xl px-5 py-3.5 text-sm font-medium cursor-pointer"
-            >
-              <Plus className="h-5 w-5" />
-              <span>New Download</span>
-            </button>
-          </div>
-
-          {/* M3 Pill Navigation Items */}
-          <nav className="space-y-1">
-            {(
-              [
-                { id: "all", label: "All Downloads", icon: Layers, count: counts.all },
-                { id: "active", label: "Downloading", icon: Download, count: counts.active },
-                { id: "paused", label: "Paused & Stopped", icon: Pause, count: counts.paused },
-                { id: "completed", label: "Completed", icon: CheckCircle2, count: counts.completed },
-              ] as const
-            ).map((item) => {
-              const Icon = item.icon;
-              const active = filter === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setFilter(item.id)}
-                  className="flex w-full items-center justify-between rounded-full px-4 py-2.5 text-[13px] font-medium transition-colors cursor-pointer"
+              <div className="flex items-center gap-2.5">
+                <div
+                  className="flex h-6 w-6 items-center justify-center rounded-[6px]"
                   style={{
-                    backgroundColor: active ? "var(--md-secondary-container)" : "transparent",
-                    color: active
-                      ? "var(--md-on-secondary-container)"
-                      : "var(--md-on-surface-variant)",
+                    backgroundColor: "var(--accent)",
+                    color: "var(--accent-fg)",
                   }}
                 >
-                  <span className="flex items-center gap-3">
-                    <Icon className="h-4.5 w-4.5" />
-                    {item.label}
-                  </span>
-                  <span className="text-xs font-semibold tabular-nums opacity-85">
-                    {item.count}
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* Bottom Status Card */}
-        <div
-          className="rounded-2xl p-3.5 text-xs"
-          style={{ backgroundColor: "var(--md-surface-container-low)" }}
-        >
-          <div className="flex items-center gap-2 font-medium">
-            <Split className="h-4 w-4" style={{ color: "var(--md-tertiary)" }} />
-            <span>Dynamic Work-Stealing</span>
-          </div>
-          <p
-            className="mt-1 text-[11px] leading-relaxed"
-            style={{ color: "var(--md-on-surface-variant)" }}
-          >
-            Up to {settings.maxConnectionsPerDownload} parallel connections · Bridge{" "}
-            {settings.bridgeEnabled ? `:${settings.bridgePort}` : "off"}
-          </p>
-        </div>
-      </aside>
-
-      {/* Right Main Column */}
-      <div className="flex flex-1 flex-col overflow-hidden pr-4 pb-4">
-        {/* Material 3 Top App Bar */}
-        <header className="flex items-center justify-between gap-4 py-3.5">
-          {/* Pill Search Field */}
-          <div className="relative flex-1 max-w-xl">
-            <Search
-              className="pointer-events-none absolute left-4 top-1/2 h-4.5 w-4.5 -translate-y-1/2"
-              style={{ color: "var(--md-on-surface-variant)" }}
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search downloads by name or URL"
-              className="w-full rounded-full py-2.5 pl-11 pr-10 text-sm outline-none transition-shadow"
-              style={{
-                backgroundColor: "var(--md-surface-container-high)",
-                color: "var(--md-on-surface)",
-              }}
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="md-icon-btn absolute right-2 top-1/2 -translate-y-1/2 p-1"
-                aria-label="Clear search"
+                  <Zap className="h-3.5 w-3.5 fill-current" />
+                </div>
+                <span className="text-[13.5px] font-semibold tracking-tight">HyperDM</span>
+              </div>
+              <span
+                className="font-mono text-[10.5px]"
+                style={{ color: "var(--text-muted)" }}
               >
-                <X className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          {/* Right App Bar Controls */}
-          <div className="flex items-center gap-2">
-            {/* Live Speed Assist Chip */}
-            <div
-              className="flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium"
-              style={{
-                backgroundColor:
-                  totalSpeedBps > 0
-                    ? "var(--md-primary-container)"
-                    : "var(--md-surface-container-high)",
-                color:
-                  totalSpeedBps > 0
-                    ? "var(--md-on-primary-container)"
-                    : "var(--md-on-surface-variant)",
-              }}
-            >
-              <Activity className="h-4 w-4" />
-              <span className="font-mono font-semibold tabular-nums">
-                {totalSpeedBps > 0 ? formatSpeed(totalSpeedBps) : "0 B/s"}
+                v0.1
               </span>
             </div>
 
-            <button
-              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-              className="md-icon-btn p-2.5 cursor-pointer"
-              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-            >
-              {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-            </button>
-
-            <button
-              onClick={() => setShowSettingsModal(true)}
-              className="md-icon-btn p-2.5 cursor-pointer"
-              title="Settings"
-            >
-              <Settings className="h-5 w-5" />
-            </button>
-          </div>
-        </header>
-
-        {/* Main Content Surface Sheet (M3 Rounded-3xl Container) */}
-        <main
-          className="flex flex-1 flex-col overflow-hidden rounded-[24px]"
-          style={{
-            backgroundColor: "var(--md-surface-container-low)",
-            boxShadow: "var(--md-shadow-1)",
-          }}
-        >
-          {/* Downloads List */}
-          <div className="flex-1 overflow-y-auto p-3">
-            {filteredTasks.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center p-8 text-center">
-                <div
-                  className="flex h-16 w-16 items-center justify-center rounded-3xl"
-                  style={{
-                    backgroundColor: "var(--md-primary-container)",
-                    color: "var(--md-on-primary-container)",
-                  }}
+            {/* Primary Action */}
+            <div className="p-3">
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="ui-btn-primary flex h-8 w-full items-center justify-between rounded-[6px] px-3 text-[12.5px] font-medium cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Plus className="h-3.5 w-3.5" />
+                  New Download
+                </span>
+                <span
+                  className="font-mono text-[10.5px] opacity-75"
+                  title="Shortcut: Ctrl+N"
                 >
-                  <Download className="h-7 w-7" />
-                </div>
-                <h3 className="mt-4 text-base font-medium">
-                  {searchQuery ? "No matching downloads" : "Your downloads will appear here"}
-                </h3>
-                <p
-                  className="mt-1 max-w-sm text-xs leading-relaxed"
-                  style={{ color: "var(--md-on-surface-variant)" }}
-                >
-                  {searchQuery
-                    ? "Try a different filename or clear the search bar."
-                    : "Click New Download or download any file in your browser to accelerate it with HyperDM."}
-                </p>
-                {!searchQuery && (
-                  <button
-                    onClick={() => setShowAddModal(true)}
-                    className="md-btn-filled mt-5 flex items-center gap-2 rounded-full px-5 py-2.5 text-xs font-semibold cursor-pointer"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Download URL
-                  </button>
-                )}
+                  ^N
+                </span>
+              </button>
+            </div>
+
+            {/* Filter Navigation */}
+            <div className="px-2.5 pt-1">
+              <div
+                className="px-2 pb-1.5 text-[10.5px] font-medium uppercase tracking-wider"
+                style={{ color: "var(--text-muted)" }}
+              >
+                Queue
               </div>
-            ) : (
-              <div className="space-y-1.5">
-                {filteredTasks.map((task) => {
-                  const pct = progressPercent(task.downloaded, task.totalSize);
-                  const chip = getStatusChipStyle(task.status);
-                  const isActivated = task.id === activatedId;
-                  const FileIcon = getFileIcon(task.fileName);
-                  const activeConns = task.segments.filter(
-                    (s) => s.status === "downloading" || s.status === "connecting"
-                  ).length;
-
+              <nav className="space-y-1">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = filter === item.id;
                   return (
-                    <div
-                      key={task.id}
-                      data-activated={isActivated}
-                      onDoubleClick={() => handleRowDoubleClick(task)}
-                      title={
-                        task.status === "completed"
-                          ? "Double-click to open file"
-                          : "Double-click to open save folder"
-                      }
-                      className="md-download-row group flex items-center gap-4 rounded-2xl px-4 py-3 cursor-pointer"
+                    <button
+                      key={item.id}
+                      onClick={() => setFilter(item.id)}
+                      className="flex h-8 w-full items-center justify-between rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors cursor-pointer"
+                      style={{
+                        backgroundColor: active ? "var(--bg-active)" : "transparent",
+                        color: active ? "var(--text-primary)" : "var(--text-secondary)",
+                      }}
                     >
-                      {/* File Type Tonal Avatar */}
-                      <div
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
+                      <span className="flex items-center gap-2.5 truncate">
+                        <Icon
+                          className="h-3.5 w-3.5 shrink-0"
+                          style={{
+                            color: active ? "var(--accent-text)" : "var(--text-muted)",
+                          }}
+                        />
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      <span
+                        className="font-mono text-[11px] tabular-nums"
                         style={{
-                          backgroundColor:
-                            task.status === "completed"
-                              ? "var(--md-tertiary-container)"
-                              : "var(--md-surface-container-high)",
-                          color:
-                            task.status === "completed"
-                              ? "var(--md-on-tertiary-container)"
-                              : "var(--md-primary)",
+                          color: active ? "var(--text-primary)" : "var(--text-muted)",
                         }}
                       >
-                        <FileIcon className="h-5 w-5" />
-                      </div>
-
-                      {/* Name + Progress Bar */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="truncate text-sm font-medium">{task.fileName}</span>
-                          <span
-                            className="shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                            style={{ backgroundColor: chip.bg, color: chip.fg }}
-                          >
-                            {chip.label}
-                          </span>
-                        </div>
-
-                        {/* M3 Linear Progress Track */}
-                        <div
-                          className="mt-2 h-1.5 w-full overflow-hidden rounded-full"
-                          style={{ backgroundColor: "var(--md-surface-container-highest)" }}
-                        >
-                          <div
-                            className="h-full rounded-full transition-all duration-150"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor:
-                                task.status === "completed"
-                                  ? "var(--md-tertiary)"
-                                  : task.status === "error"
-                                  ? "var(--md-error)"
-                                  : "var(--md-primary)",
-                            }}
-                          />
-                        </div>
-
-                        {/* Meta Row */}
-                        <div
-                          className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] tabular-nums"
-                          style={{ color: "var(--md-on-surface-variant)" }}
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <span>
-                              {formatBytes(task.downloaded)} / {formatBytes(task.totalSize)}
-                            </span>
-                            <span>·</span>
-                            <span className="font-mono font-medium">{pct.toFixed(1)}%</span>
-                            {task.status === "downloading" && (
-                              <>
-                                <span>·</span>
-                                <span
-                                  className="font-mono font-semibold"
-                                  style={{ color: "var(--md-primary)" }}
-                                >
-                                  {formatSpeed(task.speedBps)}
-                                </span>
-                                <span>·</span>
-                                <span>{formatEta(task.etaSeconds)} left</span>
-                              </>
-                            )}
-                            {task.status === "error" && task.errorMessage && (
-                              <>
-                                <span>·</span>
-                                <span
-                                  className="truncate max-w-[320px]"
-                                  style={{ color: "var(--md-error)" }}
-                                  title={task.errorMessage}
-                                >
-                                  {task.errorMessage}
-                                </span>
-                              </>
-                            )}
-                          </div>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setInspectId(task.id);
-                            }}
-                            className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-colors cursor-pointer"
-                            style={{
-                              backgroundColor: "var(--md-surface-container-high)",
-                              color: "var(--md-on-surface)",
-                            }}
-                            title="Inspect live dynamic segments"
-                          >
-                            <Split className="h-3 w-3" style={{ color: "var(--md-tertiary)" }} />
-                            {task.status === "downloading"
-                              ? `${activeConns} active`
-                              : `${task.segments.length || 1} seg`}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Inline Quick Actions */}
-                      <div
-                        className="flex shrink-0 items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                        onDoubleClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          onClick={() => setInspectId(task.id)}
-                          className="md-icon-btn p-2 cursor-pointer"
-                          title="View download statistics & segments"
-                        >
-                          <BarChart3 className="h-4.5 w-4.5" />
-                        </button>
-
-                        {task.status === "downloading" ? (
-                          <button
-                            onClick={() => void pauseDownload(task.id)}
-                            className="md-icon-btn p-2 cursor-pointer"
-                            title="Pause"
-                          >
-                            <Pause className="h-4.5 w-4.5" />
-                          </button>
-                        ) : task.status === "paused" || task.status === "error" ? (
-                          <button
-                            onClick={() => void resumeDownload(task.id)}
-                            className="md-icon-btn p-2 cursor-pointer"
-                            style={{ color: "var(--md-primary)" }}
-                            title="Resume"
-                          >
-                            <Play className="h-4.5 w-4.5" />
-                          </button>
-                        ) : task.status === "completed" ? (
-                          <button
-                            onClick={() => void openPath(task.fullPath, true)}
-                            className="md-icon-btn p-2 cursor-pointer"
-                            style={{ color: "var(--md-primary)" }}
-                            title="Show in folder"
-                          >
-                            <FolderOpen className="h-4.5 w-4.5" />
-                          </button>
-                        ) : null}
-
-                        <button
-                          onClick={() => {
-                            setDeleteFromDisk(false);
-                            setConfirmDeleteTask(task);
-                          }}
-                          className="md-icon-btn p-2 cursor-pointer"
-                          title="Remove"
-                        >
-                          <Trash2 className="h-4.5 w-4.5" />
-                        </button>
-                      </div>
-                    </div>
+                        {item.count}
+                      </span>
+                    </button>
                   );
                 })}
-              </div>
-            )}
+              </nav>
+            </div>
           </div>
-        </main>
+
+          {/* Sidebar Bottom Engine Summary */}
+          <div
+            className="px-3.5 py-3 text-[11.5px]"
+            style={{
+              borderTop: "1px solid var(--border-subtle)",
+              color: "var(--text-muted)",
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Split className="h-3.5 w-3.5" style={{ color: "var(--success)" }} />
+                <span style={{ color: "var(--text-secondary)" }}>Work-Stealing</span>
+              </span>
+              <span className="font-mono text-[11px] tabular-nums">
+                {settings.maxConnectionsPerDownload}x
+              </span>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between text-[11px]">
+              <span>Concurrent slots</span>
+              <span className="font-mono tabular-nums">{settings.maxConcurrentDownloads}</span>
+            </div>
+          </div>
+        </aside>
+
+        {/* Right Main Content Column */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Compact Top Toolbar */}
+          <header
+            className="flex h-[48px] shrink-0 items-center justify-between gap-3 px-4"
+            style={{ borderBottom: "1px solid var(--border-subtle)" }}
+          >
+            {/* Inline Search */}
+            <div className="relative flex-1 max-w-md">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+                style={{ color: "var(--text-muted)" }}
+              />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Filter downloads by name or URL..."
+                className="ui-input h-8 w-full rounded-[6px] pl-9 pr-12 text-[12.5px]"
+              />
+              {searchQuery ? (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="ui-btn-ghost absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 cursor-pointer"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <span className="ui-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
+                  ^K
+                </span>
+              )}
+            </div>
+
+            {/* Right Controls */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                className="ui-btn-ghost flex h-8 w-8 items-center justify-center rounded-[6px] cursor-pointer"
+                title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+
+              <button
+                onClick={() => setShowSettingsModal(true)}
+                className="ui-btn-ghost flex h-8 items-center gap-1.5 rounded-[6px] px-2.5 text-[12.5px] font-medium cursor-pointer"
+                title="Preferences"
+              >
+                <Settings className="h-4 w-4" />
+                <span>Settings</span>
+              </button>
+            </div>
+          </header>
+
+          {/* Revamped Precision Downloads List */}
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {/* Subtle View Context Header */}
+            <div
+              className="flex h-[34px] shrink-0 items-center justify-between px-4 text-[11.5px]"
+              style={{
+                backgroundColor: "var(--bg-sidebar)",
+                borderBottom: "1px solid var(--border-subtle)",
+                color: "var(--text-muted)",
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <span className="font-medium" style={{ color: "var(--text-secondary)" }}>
+                  {navItems.find((n) => n.id === filter)?.label}
+                </span>
+                <span
+                  className="rounded-[4px] px-1.5 py-[1px] font-mono text-[10.5px] tabular-nums"
+                  style={{
+                    backgroundColor: "var(--bg-subtle)",
+                    border: "1px solid var(--border-subtle)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {filteredTasks.length}
+                </span>
+              </div>
+              {filteredTasks.length > 0 && (
+                <span className="text-[11px] opacity-80">
+                  Double-click to open · Space to pause/resume
+                </span>
+              )}
+            </div>
+
+            {/* Rows Container */}
+            <div className="flex-1 overflow-y-auto">
+              {filteredTasks.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+                  <div
+                    className="flex h-11 w-11 items-center justify-center rounded-[8px]"
+                    style={{
+                      backgroundColor: "var(--bg-subtle)",
+                      border: "1px solid var(--border-subtle)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    <Download className="h-5 w-5" />
+                  </div>
+                  <p className="mt-3.5 text-[13.5px] font-medium">
+                    {searchQuery ? "No matching downloads" : "No downloads yet"}
+                  </p>
+                  <p
+                    className="mt-1.5 max-w-xs text-[12.5px] leading-relaxed"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {searchQuery
+                      ? "Try adjusting your filter or clearing the search query."
+                      : "Press Ctrl+N to add a direct link or YouTube URL, or trigger a download in your browser."}
+                  </p>
+                  {!searchQuery && (
+                    <button
+                      onClick={() => setShowAddModal(true)}
+                      className="ui-btn-primary mt-4 flex h-8 items-center gap-1.5 rounded-[6px] px-3.5 text-[12.5px] font-medium cursor-pointer"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Add Download
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {filteredTasks.map((task) => (
+                    <DownloadRow
+                      key={task.id}
+                      task={task}
+                      selected={task.id === selectedId}
+                      activated={task.id === activatedId}
+                      onSelect={() => setSelectedId(task.id)}
+                      onDoubleClick={() => handleRowDoubleClick(task)}
+                      onInspect={() => setInspectId(task.id)}
+                      onPause={() => void pauseDownload(task.id)}
+                      onResume={() => void resumeDownload(task.id)}
+                      onOpenFolder={() => void openPath(task.fullPath, true)}
+                      onRequestDelete={() => {
+                        setDeleteFromDisk(false);
+                        setConfirmDeleteTask(task);
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </main>
+        </div>
       </div>
 
-      {/* Material 3 Dialogs */}
+      {/* Bottom Telemetry Status Bar */}
+      <footer
+        className="flex h-[30px] shrink-0 items-center justify-between px-4 text-[11.5px]"
+        style={{
+          backgroundColor: "var(--bg-sidebar)",
+          borderTop: "1px solid var(--border-subtle)",
+          color: "var(--text-muted)",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5">
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{
+                backgroundColor: settings.bridgeEnabled
+                  ? "var(--success)"
+                  : "var(--text-muted)",
+              }}
+            />
+            <span>
+              Bridge {settings.bridgeEnabled ? `:${settings.bridgePort}` : "off"}
+            </span>
+          </span>
+          <span>·</span>
+          <span className="tabular-nums">
+            {counts.active} active / {counts.all} total
+          </span>
+          {totalActiveConns > 0 && (
+            <>
+              <span>·</span>
+              <span className="font-mono tabular-nums">{totalActiveConns} live sockets</span>
+            </>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 font-mono tabular-nums">
+          <Activity
+            className="h-3 w-3"
+            style={{ color: totalSpeedBps > 0 ? "var(--accent-text)" : "var(--text-muted)" }}
+          />
+          <span
+            className="font-medium"
+            style={{ color: totalSpeedBps > 0 ? "var(--text-primary)" : "var(--text-muted)" }}
+          >
+            {totalSpeedBps > 0 ? formatSpeed(totalSpeedBps) : "0 B/s"}
+          </span>
+        </div>
+      </footer>
+
+      {/* Modals */}
       <AddDownloadModal
         isOpen={showAddModal}
         initialUrl={pendingYouTubeUrl}
@@ -684,45 +640,55 @@ export function App() {
         onSaved={(updated) => setSettings(updated)}
       />
 
-      {/* Material 3 Delete Confirmation Dialog */}
+      {/* Compact Delete Confirmation Dialog */}
       {confirmDeleteTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4">
           <div
-            className="w-full max-w-md rounded-[28px] p-6"
+            className="w-full max-w-sm overflow-hidden rounded-[8px]"
             style={{
-              backgroundColor: "var(--md-surface-container-high)",
-              boxShadow: "var(--md-shadow-3)",
+              backgroundColor: "var(--bg-elevated)",
+              boxShadow: "var(--shadow-modal)",
             }}
           >
-            <h3 className="text-base font-medium">Remove download?</h3>
-            <p
-              className="mt-2 break-all text-xs leading-relaxed"
-              style={{ color: "var(--md-on-surface-variant)" }}
-            >
-              {confirmDeleteTask.fileName}
-            </p>
-
-            {confirmDeleteTask.status === "completed" && (
-              <label
-                className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl px-3.5 py-3 text-xs"
-                style={{ backgroundColor: "var(--md-surface-container)" }}
+            <div className="p-4">
+              <h3 className="text-[13px] font-semibold">Remove download</h3>
+              <p
+                className="mt-1.5 break-all text-[12px] leading-relaxed"
+                style={{ color: "var(--text-secondary)" }}
               >
-                <input
-                  type="checkbox"
-                  checked={deleteFromDisk}
-                  onChange={(e) => setDeleteFromDisk(e.target.checked)}
-                  className="h-4 w-4 accent-rose-500"
-                />
-                <span>Also delete the downloaded file from disk</span>
-              </label>
-            )}
+                {confirmDeleteTask.fileName}
+              </p>
 
-            <div className="mt-6 flex justify-end gap-2">
+              {confirmDeleteTask.status === "completed" && (
+                <label
+                  className="mt-3 flex cursor-pointer items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-[12px]"
+                  style={{
+                    backgroundColor: "var(--bg-subtle)",
+                    border: "1px solid var(--border-subtle)",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={deleteFromDisk}
+                    onChange={(e) => setDeleteFromDisk(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-rose-500"
+                  />
+                  <span>Also delete file from disk</span>
+                </label>
+              )}
+            </div>
+
+            <div
+              className="flex items-center justify-end gap-2 px-4 py-2.5"
+              style={{
+                backgroundColor: "var(--bg-sidebar)",
+                borderTop: "1px solid var(--border-subtle)",
+              }}
+            >
               <button
                 type="button"
                 onClick={() => setConfirmDeleteTask(null)}
-                className="rounded-full px-5 py-2 text-xs font-medium cursor-pointer"
-                style={{ color: "var(--md-primary)" }}
+                className="ui-btn-secondary h-7 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
               >
                 Cancel
               </button>
@@ -734,11 +700,7 @@ export function App() {
                   setConfirmDeleteTask(null);
                   void handleRemove(target.id, fromDisk);
                 }}
-                className="rounded-full px-5 py-2 text-xs font-semibold cursor-pointer"
-                style={{
-                  backgroundColor: "var(--md-error-container)",
-                  color: "var(--md-on-error-container)",
-                }}
+                className="ui-btn-danger h-7 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
               >
                 Remove
               </button>
