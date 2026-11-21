@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  BarChart3,
   CheckCircle2,
   Download,
   FileArchive,
@@ -483,8 +484,8 @@ export function App() {
                   onClick={() => setInspectId(selectedTask.id)}
                   className="md-btn-outlined flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
                 >
-                  <Split className="h-3.5 w-3.5" />
-                  Segments
+                  <BarChart3 className="h-3.5 w-3.5" />
+                  Statistics
                 </button>
 
                 <button
@@ -548,7 +549,14 @@ export function App() {
                     <div
                       key={task.id}
                       onClick={() => setSelectedId(task.id)}
-                      onDoubleClick={() => setInspectId(task.id)}
+                      onDoubleClick={() =>
+                        void openPath(task.fullPath, task.status !== "completed")
+                      }
+                      title={
+                        task.status === "completed"
+                          ? "Double-click to open file"
+                          : "Double-click to open save folder"
+                      }
                       className="group flex items-center gap-4 rounded-2xl px-4 py-3 transition-colors cursor-pointer"
                       style={{
                         backgroundColor: isSelected
@@ -654,7 +662,16 @@ export function App() {
                       <div
                         className="flex shrink-0 items-center gap-1"
                         onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
                       >
+                        <button
+                          onClick={() => setInspectId(task.id)}
+                          className="md-icon-btn p-2 cursor-pointer"
+                          title="View download statistics & segments"
+                        >
+                          <BarChart3 className="h-4.5 w-4.5" />
+                        </button>
+
                         {task.status === "downloading" ? (
                           <button
                             onClick={() => void pauseDownload(task.id)}
