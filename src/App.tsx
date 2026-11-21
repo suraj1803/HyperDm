@@ -31,6 +31,7 @@ import {
   listDownloads,
   onBrowserDownload,
   onDownloadProgress,
+  onYouTubeOpen,
   openPath,
   pauseDownload,
   removeDownload,
@@ -80,6 +81,12 @@ function getStatusChipStyle(status: DownloadStatus): { label: string; bg: string
         bg: "var(--md-primary-container)",
         fg: "var(--md-on-primary-container)",
       };
+    case "muxing":
+      return {
+        label: "Merging…",
+        bg: "var(--md-secondary-container)",
+        fg: "var(--md-on-secondary-container)",
+      };
     case "completed":
       return {
         label: "Completed",
@@ -127,6 +134,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [pendingYouTubeUrl, setPendingYouTubeUrl] = useState<string | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem("hyperdm-theme");
@@ -141,6 +149,7 @@ export function App() {
   useEffect(() => {
     let unlistenProgress: (() => void) | undefined;
     let unlistenBrowser: (() => void) | undefined;
+    let unlistenYouTube: (() => void) | undefined;
 
     async function bootstrap() {
       try {
@@ -168,6 +177,11 @@ export function App() {
           setSelectedId(incoming.id);
           setInspectId(incoming.id);
         });
+
+        unlistenYouTube = await onYouTubeOpen((ytUrl) => {
+          setPendingYouTubeUrl(ytUrl);
+          setShowAddModal(true);
+        });
       } catch (err) {
         console.error("Failed to initialize HyperDM:", err);
       }
@@ -177,6 +191,7 @@ export function App() {
     return () => {
       if (unlistenProgress) unlistenProgress();
       if (unlistenBrowser) unlistenBrowser();
+      if (unlistenYouTube) unlistenYouTube();
     };
   }, []);
 
@@ -688,8 +703,12 @@ export function App() {
       {/* Material 3 Dialogs */}
       <AddDownloadModal
         isOpen={showAddModal}
+        initialUrl={pendingYouTubeUrl}
         settings={settings}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => {
+          setShowAddModal(false);
+          setPendingYouTubeUrl(null);
+        }}
         onCreated={(task) => {
           setTasks((prev) => [task, ...prev.filter((t) => t.id !== task.id)]);
           setSelectedId(task.id);

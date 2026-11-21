@@ -5,11 +5,25 @@ import type {
   AddDownloadRequest,
   AppSettings,
   DownloadTaskInfo,
+  MediaToolsStatus,
   ProbeResult,
+  YouTubeProbeResult,
 } from "../types/download";
 
 export async function probeUrl(url: string): Promise<ProbeResult> {
   return invoke<ProbeResult>("probe_url", { url });
+}
+
+export async function probeYouTube(url: string): Promise<YouTubeProbeResult> {
+  return invoke<YouTubeProbeResult>("probe_youtube", { url });
+}
+
+export async function getMediaToolsStatus(): Promise<MediaToolsStatus> {
+  return invoke<MediaToolsStatus>("get_media_tools_status");
+}
+
+export async function installYtDlp(): Promise<MediaToolsStatus> {
+  return invoke<MediaToolsStatus>("install_ytdlp");
 }
 
 export async function addDownload(request: AddDownloadRequest): Promise<DownloadTaskInfo> {
@@ -69,6 +83,14 @@ export async function onBrowserDownload(
   handler: (task: DownloadTaskInfo) => void
 ): Promise<UnlistenFn> {
   return listen<DownloadTaskInfo>("download:from-browser", (event) => {
+    handler(event.payload);
+  });
+}
+
+export async function onYouTubeOpen(
+  handler: (url: string) => void
+): Promise<UnlistenFn> {
+  return listen<string>("youtube:open-url", (event) => {
     handler(event.payload);
   });
 }

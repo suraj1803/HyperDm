@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::engine::manager::DownloadManager;
 use crate::engine::models::{
-    AddDownloadRequest, AppSettings, DownloadError, DownloadTaskInfo, ProbeResult,
+    AddDownloadRequest, AppSettings, DownloadError, DownloadTaskInfo, MediaToolsStatus,
+    ProbeResult, YouTubeProbeResult,
 };
 
 #[tauri::command]
@@ -15,6 +16,26 @@ pub async fn probe_url(
     url: String,
 ) -> Result<ProbeResult, DownloadError> {
     manager.probe(&url).await
+}
+
+#[tauri::command]
+pub async fn probe_youtube(
+    manager: State<'_, DownloadManager>,
+    url: String,
+) -> Result<YouTubeProbeResult, DownloadError> {
+    manager.probe_youtube(&url).await
+}
+
+#[tauri::command]
+pub fn get_media_tools_status(manager: State<'_, DownloadManager>) -> MediaToolsStatus {
+    manager.media_tools_status()
+}
+
+#[tauri::command]
+pub async fn install_ytdlp(
+    manager: State<'_, DownloadManager>,
+) -> Result<MediaToolsStatus, DownloadError> {
+    manager.install_ytdlp().await
 }
 
 #[tauri::command]

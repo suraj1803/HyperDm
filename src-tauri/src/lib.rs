@@ -40,12 +40,19 @@ pub fn run() {
             let bridge_port = manager.get_settings().bridge_port;
             let bridge_manager = manager.clone();
             let browser_handle = app.handle().clone();
+            let yt_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let on_browser = Arc::new(move |task: DownloadTaskInfo| {
                     let _ = browser_handle.emit("download:from-browser", &task);
                     show_main_window(&browser_handle);
                 });
-                if let Err(e) = start_bridge_server(bridge_port, bridge_manager, on_browser).await {
+                let on_youtube = Arc::new(move |url: String| {
+                    let _ = yt_handle.emit("youtube:open-url", &url);
+                    show_main_window(&yt_handle);
+                });
+                if let Err(e) =
+                    start_bridge_server(bridge_port, bridge_manager, on_browser, on_youtube).await
+                {
                     eprintln!(
                         "HyperDM browser bridge failed to bind on 127.0.0.1:{}: {}",
                         bridge_port, e
@@ -130,6 +137,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::probe_url,
+            commands::probe_youtube,
+            commands::get_media_tools_status,
+            commands::install_ytdlp,
             commands::add_download,
             commands::list_downloads,
             commands::pause_download,

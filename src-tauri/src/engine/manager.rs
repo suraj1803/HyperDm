@@ -9,12 +9,16 @@ use reqwest::Client;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::engine::coordinator::{part_file_path, run_download_coordinator, ProgressCallback};
+use crate::engine::coordinator::{
+    audio_part_file_path, part_file_path, run_download_coordinator, ProgressCallback,
+};
 use crate::engine::models::{
-    AddDownloadRequest, AppSettings, DownloadError, DownloadStatus, DownloadTaskInfo, ProbeResult,
+    AddDownloadRequest, AppSettings, DownloadError, DownloadStatus, DownloadTaskInfo,
+    MediaToolsStatus, ProbeResult, YouTubeProbeResult,
 };
 use crate::engine::persistence::StateStore;
 use crate::engine::prober::{build_http_client, probe_url, sanitize_filename};
+use crate::engine::youtube::{install_or_update_ytdlp, media_tools_status, probe_youtube};
 
 struct ActiveRun {
     run_id: Uuid,
@@ -33,6 +37,7 @@ struct InnerState {
 #[derive(Clone)]
 pub struct DownloadManager {
     client: Client,
+    data_dir: PathBuf,
     store: StateStore,
     state: Arc<RwLock<InnerState>>,
     emitter: ProgressCallback,
@@ -52,6 +57,7 @@ impl DownloadManager {
 
         Ok(Self {
             client,
+            data_dir: data_dir.to_path_buf(),
             store,
             state: Arc::new(RwLock::new(InnerState {
                 tasks,
@@ -66,6 +72,19 @@ impl DownloadManager {
 
     pub async fn probe(&self, url: &str) -> Result<ProbeResult, DownloadError> {
         probe_url(&self.client, url, &HashMap::new()).await
+    }
+
+    pub async fn probe_youtube(&self, url: &str) -> Result<YouTubeProbeResult, DownloadError> {
+        probe_youtube(&self.client, &self.data_dir, url).await
+    }
+
+    pub fn media_tools_status(&self) -> MediaToolsStatus {
+        media_tools_status(&self.data_dir)
+    }
+
+    pub async fn install_ytdlp(&self) -> Result<MediaToolsStatus, DownloadError> {
+        install_or_update_ytdlp(&self.client, &self.data_dir).await?;
+        Ok(media_tools_status(&self.data_dir))
     }
 
     pub fn list_downloads(&self) -> Vec<DownloadTaskInfo> {
@@ -138,6 +157,9 @@ impl DownloadManager {
             etag: probe.etag,
             last_modified: probe.last_modified,
             request_headers: req.headers,
+            companion_audio_url: req.companion_audio_url,
+            media_thumbnail: req.media_thumbnail,
+            media_quality_label: req.media_quality_label,
             segments: Vec::new(),
             dynamic_splits: 0,
             created_at: Utc::now(),
@@ -280,8 +302,9 @@ impl DownloadManager {
             t.cancel();
         }
 
-        let part = part_file_path(Path::new(&full_path));
-        let _ = fs::remove_file(part);
+        let full = Path::new(&full_path);
+        let _ = fs::remove_file(part_file_path(full));
+        let _ = fs::remove_file(audio_part_file_path(full));
 
         self.persist_now();
         let updated = self.get_download(id).ok_or(DownloadError::NotFound(id))?;
@@ -305,6 +328,7 @@ impl DownloadManager {
         if let Some(task) = task {
             let full = Path::new(&task.full_path);
             let _ = fs::remove_file(part_file_path(full));
+            let _ = fs::remove_file(audio_part_file_path(full));
             if delete_file {
                 let _ = fs::remove_file(full);
             }

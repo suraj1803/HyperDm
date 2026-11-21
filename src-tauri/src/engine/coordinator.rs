@@ -1,23 +1,33 @@
 use std::collections::{HashMap, VecDeque};
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use futures_util::StreamExt;
 use reqwest::Client;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::engine::models::{DownloadError, DownloadStatus, DownloadTaskInfo, SegmentStatus};
+use crate::engine::prober::build_header_map;
 use crate::engine::segment::{build_initial_segments, try_split_largest_segment, LiveSegment};
 use crate::engine::worker::{run_range_worker, run_single_stream_worker, WorkerOutcome};
+use crate::engine::youtube::mux_video_and_audio;
 
 pub type ProgressCallback = Arc<dyn Fn(DownloadTaskInfo) + Send + Sync>;
 
 pub fn part_file_path(full_path: &Path) -> PathBuf {
     let mut os = full_path.as_os_str().to_os_string();
     os.push(".hyperdm.part");
+    PathBuf::from(os)
+}
+
+pub fn audio_part_file_path(full_path: &Path) -> PathBuf {
+    let mut os = full_path.as_os_str().to_os_string();
+    os.push(".hyperdm.audio.part");
     PathBuf::from(os)
 }
 
@@ -98,9 +108,10 @@ pub async fn run_download_coordinator(
         }
     }
 
-    // If all segments were already complete (e.g., resumed right before rename)
+    // If all segments were already complete (e.g., resumed right before rename/mux)
     if active_workers == 0 {
-        return finalize_download(task, &segments, &part_path, &final_path, on_progress);
+        return finalize_download(&client, task, &segments, &part_path, &final_path, on_progress)
+            .await;
     }
 
     let mut tick = tokio::time::interval(Duration::from_millis(150));
@@ -182,7 +193,15 @@ pub async fn run_download_coordinator(
         // Distinguish Pause vs Cancel in the manager; coordinator marks Paused
         let all_done = segments.iter().all(|s| s.is_complete());
         if all_done {
-            return finalize_download(task, &segments, &part_path, &final_path, on_progress);
+            return finalize_download(
+                &client,
+                task,
+                &segments,
+                &part_path,
+                &final_path,
+                on_progress,
+            )
+            .await;
         }
         task.status = DownloadStatus::Paused;
         on_progress(task.clone());
@@ -191,7 +210,7 @@ pub async fn run_download_coordinator(
 
     let all_done = segments.iter().all(|s| s.is_complete());
     if all_done {
-        finalize_download(task, &segments, &part_path, &final_path, on_progress)
+        finalize_download(&client, task, &segments, &part_path, &final_path, on_progress).await
     } else {
         task.status = DownloadStatus::Error;
         task.error_message = Some("Download ended with incomplete segments".to_string());
@@ -282,7 +301,7 @@ async fn run_single_stream_download(
             if task.total_size.is_none() {
                 task.total_size = Some(task.downloaded);
             }
-            finalize_download(task, &segments, &part_path, &final_path, on_progress)
+            finalize_download(&client, task, &segments, &part_path, &final_path, on_progress).await
         }
         WorkerOutcome::Paused { .. } => {
             task.status = DownloadStatus::Paused;
@@ -310,14 +329,63 @@ fn prepare_part_file(part_path: &Path, total_size: u64) -> Result<std::fs::File,
     Ok(file)
 }
 
-fn finalize_download(
+async fn download_companion_audio(
+    client: &Client,
+    audio_url: &str,
+    headers: &HashMap<String, String>,
+    dest: &Path,
+) -> Result<(), DownloadError> {
+    let extra = build_header_map(headers);
+    let resp = client.get(audio_url).headers(extra).send().await?;
+    if !resp.status().is_success() {
+        return Err(DownloadError::HttpStatus(resp.status().as_u16()));
+    }
+    let mut file = File::create(dest)?;
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk?;
+        file.write_all(&bytes)?;
+    }
+    file.sync_all()?;
+    Ok(())
+}
+
+async fn finalize_download(
+    client: &Client,
     mut task: DownloadTaskInfo,
     segments: &[Arc<LiveSegment>],
     part_path: &Path,
     final_path: &Path,
     on_progress: ProgressCallback,
 ) -> DownloadTaskInfo {
-    if part_path.exists() {
+    if let Some(audio_url) = task.companion_audio_url.clone() {
+        task.status = DownloadStatus::Muxing;
+        task.speed_bps = 0;
+        task.eta_seconds = None;
+        on_progress(task.clone());
+
+        let audio_part = audio_part_file_path(final_path);
+        if let Err(e) =
+            download_companion_audio(client, &audio_url, &task.request_headers, &audio_part).await
+        {
+            let _ = fs::remove_file(&audio_part);
+            task.status = DownloadStatus::Error;
+            task.error_message = Some(format!("Failed to download audio track: {}", e));
+            on_progress(task.clone());
+            return task;
+        }
+
+        if let Err(e) = mux_video_and_audio(part_path, &audio_part, final_path).await {
+            let _ = fs::remove_file(&audio_part);
+            task.status = DownloadStatus::Error;
+            task.error_message = Some(e.to_string());
+            on_progress(task.clone());
+            return task;
+        }
+
+        let _ = fs::remove_file(part_path);
+        let _ = fs::remove_file(&audio_part);
+    } else if part_path.exists() {
         if let Err(e) = fs::rename(part_path, final_path) {
             task.status = DownloadStatus::Error;
             task.error_message = Some(format!("Failed to finalize file: {}", e));
@@ -327,9 +395,16 @@ fn finalize_download(
     }
 
     task.segments = segments.iter().map(|s| s.snapshot()).collect();
-    task.downloaded = segments.iter().map(|s| s.downloaded_bytes()).sum();
-    if task.total_size.is_none() {
-        task.total_size = Some(task.downloaded);
+    if let Ok(meta) = fs::metadata(final_path) {
+        let final_len = meta.len();
+        if task.companion_audio_url.is_some() || task.total_size.is_none() {
+            task.total_size = Some(final_len);
+            task.downloaded = final_len;
+        } else {
+            task.downloaded = segments.iter().map(|s| s.downloaded_bytes()).sum();
+        }
+    } else {
+        task.downloaded = segments.iter().map(|s| s.downloaded_bytes()).sum();
     }
     task.speed_bps = 0;
     task.eta_seconds = Some(0);

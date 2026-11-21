@@ -21,6 +21,12 @@ pub struct BrowserDownloadPayload {
     pub max_connections: Option<u32>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YouTubeOpenPayload {
+    pub url: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct HealthResponse {
@@ -31,6 +37,7 @@ struct HealthResponse {
 }
 
 pub type BrowserNotifyCallback = Arc<dyn Fn(DownloadTaskInfo) + Send + Sync>;
+pub type YouTubeOpenCallback = Arc<dyn Fn(String) + Send + Sync>;
 
 /// Starts the loopback-only HTTP bridge (`127.0.0.1:<port>`) for the HyperDM browser extension.
 /// Returns the bound `SocketAddr` (useful when binding to port `0` in tests).
@@ -38,6 +45,7 @@ pub async fn start_bridge_server(
     port: u16,
     manager: DownloadManager,
     on_browser_download: BrowserNotifyCallback,
+    on_youtube_open: YouTubeOpenCallback,
 ) -> std::io::Result<std::net::SocketAddr> {
     let listener = TcpListener::bind(("127.0.0.1", port)).await?;
     let addr = listener.local_addr()?;
@@ -49,8 +57,9 @@ pub async fn start_bridge_server(
             };
             let mgr = manager.clone();
             let notify = Arc::clone(&on_browser_download);
+            let yt_notify = Arc::clone(&on_youtube_open);
             tokio::spawn(async move {
-                let _ = handle_connection(stream, mgr, notify).await;
+                let _ = handle_connection(stream, mgr, notify, yt_notify).await;
             });
         }
     });
@@ -62,6 +71,7 @@ async fn handle_connection(
     mut stream: TcpStream,
     manager: DownloadManager,
     on_browser_download: BrowserNotifyCallback,
+    on_youtube_open: YouTubeOpenCallback,
 ) -> std::io::Result<()> {
     let mut buf = Vec::with_capacity(4096);
     let mut tmp = [0u8; 4096];
@@ -185,6 +195,9 @@ async fn handle_connection(
                 file_name: parsed.file_name,
                 max_connections: parsed.max_connections,
                 headers,
+                companion_audio_url: None,
+                media_thumbnail: None,
+                media_quality_label: None,
             };
 
             match manager.add_download(req).await {
@@ -198,6 +211,30 @@ async fn handle_connection(
                     send_json(&mut stream, 400, &msg.to_string()).await?;
                 }
             }
+        }
+        ("POST", "/api/youtube/open") => {
+            let settings = manager.get_settings();
+            if !settings.bridge_enabled {
+                send_json(
+                    &mut stream,
+                    503,
+                    r#"{"error":"Browser integration is disabled in HyperDM settings"}"#,
+                )
+                .await?;
+                return Ok(());
+            }
+
+            let parsed: YouTubeOpenPayload = match serde_json::from_slice(body) {
+                Ok(p) => p,
+                Err(e) => {
+                    let msg = serde_json::json!({ "error": format!("Invalid JSON: {}", e) });
+                    send_json(&mut stream, 400, &msg.to_string()).await?;
+                    return Ok(());
+                }
+            };
+
+            on_youtube_open(parsed.url);
+            send_json(&mut stream, 200, r#"{"ok":true}"#).await?;
         }
         _ => {
             send_json(&mut stream, 404, r#"{"error":"Not found"}"#).await?;

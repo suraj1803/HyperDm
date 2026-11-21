@@ -2,6 +2,7 @@ export type DownloadStatus =
   | "queued"
   | "probing"
   | "downloading"
+  | "muxing"
   | "paused"
   | "completed"
   | "error"
@@ -53,6 +54,9 @@ export interface DownloadTaskInfo {
   errorMessage: string | null;
   etag: string | null;
   lastModified: string | null;
+  companionAudioUrl?: string | null;
+  mediaThumbnail?: string | null;
+  mediaQualityLabel?: string | null;
   segments: SegmentSnapshot[];
   dynamicSplits: number;
   createdAt: string;
@@ -74,4 +78,39 @@ export interface AddDownloadRequest {
   saveDir?: string;
   fileName?: string;
   maxConnections?: number;
+  headers?: Record<string, string>;
+  companionAudioUrl?: string;
+  mediaThumbnail?: string;
+  mediaQualityLabel?: string;
+}
+
+export interface YouTubeFormatOption {
+  id: string;
+  label: string;
+  ext: string;
+  height: number | null;
+  fps: number | null;
+  isAudioOnly: boolean;
+  needsMux: boolean;
+  approxSizeBytes: number | null;
+  videoUrl: string;
+  audioUrl: string | null;
+  httpHeaders: Record<string, string>;
+}
+
+export interface YouTubeProbeResult {
+  url: string;
+  title: string;
+  uploader: string | null;
+  durationSeconds: number | null;
+  thumbnail: string | null;
+  ffmpegAvailable: boolean;
+  formats: YouTubeFormatOption[];
+}
+
+export interface MediaToolsStatus {
+  ytdlpInstalled: boolean;
+  ytdlpPath: string | null;
+  ffmpegInstalled: boolean;
+  ffmpegPath: string | null;
 }
