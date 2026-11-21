@@ -18,7 +18,9 @@ use crate::engine::models::{
 };
 use crate::engine::persistence::StateStore;
 use crate::engine::prober::{build_http_client, probe_url, sanitize_filename};
-use crate::engine::youtube::{install_or_update_ytdlp, media_tools_status, probe_youtube};
+use crate::engine::youtube::{
+    install_or_update_ffmpeg, install_or_update_ytdlp, media_tools_status, probe_youtube,
+};
 
 struct ActiveRun {
     run_id: Uuid,
@@ -84,6 +86,11 @@ impl DownloadManager {
 
     pub async fn install_ytdlp(&self) -> Result<MediaToolsStatus, DownloadError> {
         install_or_update_ytdlp(&self.client, &self.data_dir).await?;
+        Ok(media_tools_status(&self.data_dir))
+    }
+
+    pub async fn install_ffmpeg(&self) -> Result<MediaToolsStatus, DownloadError> {
+        install_or_update_ffmpeg(&self.client, &self.data_dir).await?;
         Ok(media_tools_status(&self.data_dir))
     }
 
@@ -391,8 +398,15 @@ impl DownloadManager {
                 (progress_mgr.emitter)(updated);
             });
 
-            let mut final_task =
-                run_download_coordinator(client, task, min_split_size, token, on_progress).await;
+            let mut final_task = run_download_coordinator(
+                client,
+                manager.data_dir.clone(),
+                task,
+                min_split_size,
+                token,
+                on_progress,
+            )
+            .await;
 
             {
                 let mut guard = manager.state.write().unwrap();

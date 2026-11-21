@@ -35,6 +35,7 @@ pub fn audio_part_file_path(full_path: &Path) -> PathBuf {
 /// until completion, pause, cancellation, or error.
 pub async fn run_download_coordinator(
     client: Client,
+    data_dir: PathBuf,
     mut task: DownloadTaskInfo,
     min_split_size: u64,
     cancel: CancellationToken,
@@ -58,8 +59,16 @@ pub async fn run_download_coordinator(
     let use_range = task.supports_range && task.total_size.unwrap_or(0) > 0;
 
     if !use_range {
-        return run_single_stream_download(client, task, part_path, final_path, cancel, on_progress)
-            .await;
+        return run_single_stream_download(
+            client,
+            data_dir,
+            task,
+            part_path,
+            final_path,
+            cancel,
+            on_progress,
+        )
+        .await;
     }
 
     let total_size = task.total_size.unwrap();
@@ -112,6 +121,7 @@ pub async fn run_download_coordinator(
     if active_workers == 0 {
         return finalize_download(
             &client,
+            &data_dir,
             task,
             &segments,
             &part_path,
@@ -203,6 +213,7 @@ pub async fn run_download_coordinator(
         if all_done {
             return finalize_download(
                 &client,
+                &data_dir,
                 task,
                 &segments,
                 &part_path,
@@ -221,6 +232,7 @@ pub async fn run_download_coordinator(
     if all_done {
         finalize_download(
             &client,
+            &data_dir,
             task,
             &segments,
             &part_path,
@@ -264,6 +276,7 @@ fn spawn_range_worker(
 
 async fn run_single_stream_download(
     client: Client,
+    data_dir: PathBuf,
     mut task: DownloadTaskInfo,
     part_path: PathBuf,
     final_path: PathBuf,
@@ -321,6 +334,7 @@ async fn run_single_stream_download(
             }
             finalize_download(
                 &client,
+                &data_dir,
                 task,
                 &segments,
                 &part_path,
@@ -569,6 +583,7 @@ async fn download_companion_audio(
 
 async fn finalize_download(
     client: &Client,
+    data_dir: &Path,
     mut task: DownloadTaskInfo,
     segments: &[Arc<LiveSegment>],
     part_path: &Path,
@@ -602,7 +617,9 @@ async fn finalize_download(
             }
         }
 
-        if let Err(e) = mux_video_and_audio(part_path, &audio_part, final_path).await {
+        if let Err(e) =
+            mux_video_and_audio(client, data_dir, part_path, &audio_part, final_path).await
+        {
             let _ = fs::remove_file(&audio_part);
             task.status = DownloadStatus::Error;
             task.error_message = Some(e.to_string());

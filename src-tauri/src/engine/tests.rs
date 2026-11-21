@@ -584,12 +584,11 @@ fn test_youtube_url_detection_and_format_selection() {
 
 #[tokio::test]
 async fn test_adaptive_video_audio_download_and_ffmpeg_mux() {
-    let Some(ffmpeg) = find_ffmpeg() else {
+    let tmp = TempDir::new().unwrap();
+    let Some(ffmpeg) = find_ffmpeg(&tmp.path().join("data")) else {
         // Skip gracefully on environments without ffmpeg
         return;
     };
-
-    let tmp = TempDir::new().unwrap();
     let src_video = tmp.path().join("src_video.mp4");
     let src_audio = tmp.path().join("src_audio.m4a");
 

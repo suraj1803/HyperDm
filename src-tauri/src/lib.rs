@@ -140,6 +140,7 @@ pub fn run() {
             commands::probe_youtube,
             commands::get_media_tools_status,
             commands::install_ytdlp,
+            commands::install_ffmpeg,
             commands::add_download,
             commands::list_downloads,
             commands::pause_download,

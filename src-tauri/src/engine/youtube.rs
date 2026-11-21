@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, HashMap};
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
+use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 use tokio::process::Command;
@@ -94,19 +96,100 @@ pub fn find_ytdlp(data_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-pub fn find_ffmpeg() -> Option<PathBuf> {
-    find_in_path("ffmpeg")
+fn ffmpeg_binary_name() -> &'static str {
+    #[cfg(windows)]
+    {
+        "ffmpeg.exe"
+    }
+    #[cfg(not(windows))]
+    {
+        "ffmpeg"
+    }
+}
+
+fn ffmpeg_release_url() -> &'static str {
+    #[cfg(windows)]
+    {
+        "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-win32-x64"
+    }
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    {
+        "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-arm64"
+    }
+    #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
+    {
+        "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-darwin-x64"
+    }
+    #[cfg(all(unix, not(target_os = "macos"), target_arch = "aarch64"))]
+    {
+        "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-linux-arm64"
+    }
+    #[cfg(all(unix, not(target_os = "macos"), not(target_arch = "aarch64")))]
+    {
+        "https://github.com/eugeneware/ffmpeg-static/releases/latest/download/ffmpeg-linux-x64"
+    }
+}
+
+pub fn find_ffmpeg(data_dir: &Path) -> Option<PathBuf> {
+    if let Some(sys) = find_in_path("ffmpeg") {
+        return Some(sys);
+    }
+    let managed = data_dir.join("bin").join(ffmpeg_binary_name());
+    if managed.is_file() {
+        return Some(managed);
+    }
+    None
 }
 
 pub fn media_tools_status(data_dir: &Path) -> MediaToolsStatus {
     let ytdlp = find_ytdlp(data_dir);
-    let ffmpeg = find_ffmpeg();
+    let ffmpeg = find_ffmpeg(data_dir);
     MediaToolsStatus {
         ytdlp_installed: ytdlp.is_some(),
         ytdlp_path: ytdlp.map(|p| p.to_string_lossy().to_string()),
         ffmpeg_installed: ffmpeg.is_some(),
         ffmpeg_path: ffmpeg.map(|p| p.to_string_lossy().to_string()),
     }
+}
+
+/// Streams a standalone static `ffmpeg` binary into `<data_dir>/bin/`.
+pub async fn install_or_update_ffmpeg(
+    client: &Client,
+    data_dir: &Path,
+) -> Result<PathBuf, DownloadError> {
+    let bin_dir = data_dir.join("bin");
+    fs::create_dir_all(&bin_dir)?;
+    let target = bin_dir.join(ffmpeg_binary_name());
+    let tmp = bin_dir.join(format!("{}.downloading", ffmpeg_binary_name()));
+
+    let resp = client.get(ffmpeg_release_url()).send().await?;
+    if !resp.status().is_success() {
+        return Err(DownloadError::MediaTool(format!(
+            "Failed to download ffmpeg (HTTP {})",
+            resp.status().as_u16()
+        )));
+    }
+
+    {
+        let mut file = File::create(&tmp)?;
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk?;
+            file.write_all(&bytes)?;
+        }
+        file.sync_all()?;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&tmp)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&tmp, perms)?;
+    }
+
+    fs::rename(&tmp, &target)?;
+    Ok(target)
 }
 
 /// Downloads the official standalone yt-dlp binary into `<data_dir>/bin/`.
@@ -210,7 +293,8 @@ pub async fn probe_youtube(
     }
 
     let json_str = String::from_utf8_lossy(&output.stdout);
-    let ffmpeg_available = find_ffmpeg().is_some();
+    // ffmpeg is either installed or auto-downloaded on demand during muxing
+    let ffmpeg_available = true;
     parse_ytdlp_json(url, &json_str, ffmpeg_available)
 }
 
@@ -429,17 +513,18 @@ fn video_score(f: &RawYtDlpFormat) -> f64 {
 }
 
 /// Losslessly muxes downloaded video + audio streams into `output_path` using `ffmpeg`.
+/// Automatically downloads a standalone `ffmpeg` binary into `<data_dir>/bin/` if not present.
 pub async fn mux_video_and_audio(
+    client: &Client,
+    data_dir: &Path,
     video_part: &Path,
     audio_part: &Path,
     output_path: &Path,
 ) -> Result<(), DownloadError> {
-    let ffmpeg = find_ffmpeg().ok_or_else(|| {
-        DownloadError::MediaTool(
-            "ffmpeg is required to merge HD video and audio tracks, but was not found in PATH"
-                .to_string(),
-        )
-    })?;
+    let ffmpeg = match find_ffmpeg(data_dir) {
+        Some(p) => p,
+        None => install_or_update_ffmpeg(client, data_dir).await?,
+    };
 
     // Attempt 1: Instant lossless stream copy (non-interactive, explicit v+a mapping)
     let status = Command::new(&ffmpeg)

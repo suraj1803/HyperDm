@@ -26,6 +26,10 @@ export async function installYtDlp(): Promise<MediaToolsStatus> {
   return invoke<MediaToolsStatus>("install_ytdlp");
 }
 
+export async function installFfmpeg(): Promise<MediaToolsStatus> {
+  return invoke<MediaToolsStatus>("install_ffmpeg");
+}
+
 export async function addDownload(request: AddDownloadRequest): Promise<DownloadTaskInfo> {
   return invoke<DownloadTaskInfo>("add_download", { request });
 }

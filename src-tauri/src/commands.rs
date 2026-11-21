@@ -39,6 +39,13 @@ pub async fn install_ytdlp(
 }
 
 #[tauri::command]
+pub async fn install_ffmpeg(
+    manager: State<'_, DownloadManager>,
+) -> Result<MediaToolsStatus, DownloadError> {
+    manager.install_ffmpeg().await
+}
+
+#[tauri::command]
 pub async fn add_download(
     manager: State<'_, DownloadManager>,
     request: AddDownloadRequest,
