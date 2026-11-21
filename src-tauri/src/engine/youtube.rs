@@ -441,13 +441,23 @@ pub async fn mux_video_and_audio(
         )
     })?;
 
-    // Attempt 1: Instant lossless stream copy
+    // Attempt 1: Instant lossless stream copy (non-interactive, explicit v+a mapping)
     let status = Command::new(&ffmpeg)
-        .args(["-y", "-i"])
+        .stdin(std::process::Stdio::null())
+        .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(video_part)
         .arg("-i")
         .arg(audio_part)
-        .args(["-c", "copy", "-movflags", "+faststart"])
+        .args([
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+        ])
         .arg(output_path)
         .output()
         .await
@@ -459,11 +469,23 @@ pub async fn mux_video_and_audio(
 
     // Attempt 2: Video stream copy + AAC audio transcode (handles Opus-in-MP4 compatibility)
     let fallback = Command::new(&ffmpeg)
-        .args(["-y", "-i"])
+        .stdin(std::process::Stdio::null())
+        .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(video_part)
         .arg("-i")
         .arg(audio_part)
-        .args(["-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart"])
+        .args([
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+        ])
         .arg(output_path)
         .output()
         .await

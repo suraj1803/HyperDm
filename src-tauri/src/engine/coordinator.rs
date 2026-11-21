@@ -110,8 +110,16 @@ pub async fn run_download_coordinator(
 
     // If all segments were already complete (e.g., resumed right before rename/mux)
     if active_workers == 0 {
-        return finalize_download(&client, task, &segments, &part_path, &final_path, on_progress)
-            .await;
+        return finalize_download(
+            &client,
+            task,
+            &segments,
+            &part_path,
+            &final_path,
+            &cancel,
+            on_progress,
+        )
+        .await;
     }
 
     let mut tick = tokio::time::interval(Duration::from_millis(150));
@@ -199,6 +207,7 @@ pub async fn run_download_coordinator(
                 &segments,
                 &part_path,
                 &final_path,
+                &cancel,
                 on_progress,
             )
             .await;
@@ -210,7 +219,16 @@ pub async fn run_download_coordinator(
 
     let all_done = segments.iter().all(|s| s.is_complete());
     if all_done {
-        finalize_download(&client, task, &segments, &part_path, &final_path, on_progress).await
+        finalize_download(
+            &client,
+            task,
+            &segments,
+            &part_path,
+            &final_path,
+            &cancel,
+            on_progress,
+        )
+        .await
     } else {
         task.status = DownloadStatus::Error;
         task.error_message = Some("Download ended with incomplete segments".to_string());
@@ -301,7 +319,16 @@ async fn run_single_stream_download(
             if task.total_size.is_none() {
                 task.total_size = Some(task.downloaded);
             }
-            finalize_download(&client, task, &segments, &part_path, &final_path, on_progress).await
+            finalize_download(
+                &client,
+                task,
+                &segments,
+                &part_path,
+                &final_path,
+                &cancel,
+                on_progress,
+            )
+            .await
         }
         WorkerOutcome::Paused { .. } => {
             task.status = DownloadStatus::Paused;
@@ -334,15 +361,73 @@ async fn download_companion_audio(
     audio_url: &str,
     headers: &HashMap<String, String>,
     dest: &Path,
+    cancel: &CancellationToken,
 ) -> Result<(), DownloadError> {
     let extra = build_header_map(headers);
-    let resp = client.get(audio_url).headers(extra).send().await?;
+    let mut file = File::create(dest)?;
+
+    // Probe audio size & range support so we can fetch in fast 4 MiB sub-ranges (avoids googlevideo throttling)
+    let probe = crate::engine::prober::probe_url(client, audio_url, headers).await;
+    if let Ok(p) = probe {
+        if p.supports_range {
+            if let Some(total) = p.total_size {
+                const AUDIO_CHUNK: u64 = 4 * 1024 * 1024;
+                let mut offset: u64 = 0;
+                while offset < total {
+                    if cancel.is_cancelled() {
+                        return Err(DownloadError::Cancelled);
+                    }
+                    let end = (offset + AUDIO_CHUNK - 1).min(total - 1);
+                    let resp = tokio::select! {
+                        _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+                        r = tokio::time::timeout(
+                            Duration::from_secs(30),
+                            client
+                                .get(&p.final_url)
+                                .headers(extra.clone())
+                                .header(reqwest::header::RANGE, format!("bytes={}-{}", offset, end))
+                                .send(),
+                        ) => r.map_err(|_| DownloadError::MediaTool("Audio chunk request timed out".into()))??,
+                    };
+                    if !resp.status().is_success() && resp.status().as_u16() != 206 {
+                        return Err(DownloadError::HttpStatus(resp.status().as_u16()));
+                    }
+                    let mut stream = resp.bytes_stream();
+                    while let Some(chunk) = tokio::select! {
+                        _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+                        c = tokio::time::timeout(Duration::from_secs(30), stream.next()) => {
+                            c.map_err(|_| DownloadError::MediaTool("Audio stream stalled".into()))?
+                        }
+                    } {
+                        let bytes = chunk?;
+                        file.write_all(&bytes)?;
+                        offset += bytes.len() as u64;
+                    }
+                }
+                file.sync_all()?;
+                return Ok(());
+            }
+        }
+    }
+
+    // Fallback single-stream audio download with timeout & cancellation
+    let resp = tokio::select! {
+        _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+        r = tokio::time::timeout(
+            Duration::from_secs(30),
+            client.get(audio_url).headers(extra).send(),
+        ) => r.map_err(|_| DownloadError::MediaTool("Audio request timed out".into()))??,
+    };
     if !resp.status().is_success() {
         return Err(DownloadError::HttpStatus(resp.status().as_u16()));
     }
-    let mut file = File::create(dest)?;
     let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
+    while let Some(chunk) = tokio::select! {
+        _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+        c = tokio::time::timeout(Duration::from_secs(30), stream.next()) => {
+            c.map_err(|_| DownloadError::MediaTool("Audio stream stalled".into()))?
+        }
+    } {
         let bytes = chunk?;
         file.write_all(&bytes)?;
     }
@@ -356,6 +441,7 @@ async fn finalize_download(
     segments: &[Arc<LiveSegment>],
     part_path: &Path,
     final_path: &Path,
+    cancel: &CancellationToken,
     on_progress: ProgressCallback,
 ) -> DownloadTaskInfo {
     if let Some(audio_url) = task.companion_audio_url.clone() {
@@ -365,14 +451,23 @@ async fn finalize_download(
         on_progress(task.clone());
 
         let audio_part = audio_part_file_path(final_path);
-        if let Err(e) =
-            download_companion_audio(client, &audio_url, &task.request_headers, &audio_part).await
+        match download_companion_audio(client, &audio_url, &task.request_headers, &audio_part, cancel)
+            .await
         {
-            let _ = fs::remove_file(&audio_part);
-            task.status = DownloadStatus::Error;
-            task.error_message = Some(format!("Failed to download audio track: {}", e));
-            on_progress(task.clone());
-            return task;
+            Ok(()) => {}
+            Err(DownloadError::Cancelled) => {
+                let _ = fs::remove_file(&audio_part);
+                task.status = DownloadStatus::Paused;
+                on_progress(task.clone());
+                return task;
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&audio_part);
+                task.status = DownloadStatus::Error;
+                task.error_message = Some(format!("Failed to download audio track: {}", e));
+                on_progress(task.clone());
+                return task;
+            }
         }
 
         if let Err(e) = mux_video_and_audio(part_path, &audio_part, final_path).await {

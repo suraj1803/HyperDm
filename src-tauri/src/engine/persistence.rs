@@ -27,7 +27,10 @@ impl StateStore {
         for t in &mut tasks {
             if matches!(
                 t.status,
-                DownloadStatus::Downloading | DownloadStatus::Probing | DownloadStatus::Queued
+                DownloadStatus::Downloading
+                    | DownloadStatus::Probing
+                    | DownloadStatus::Queued
+                    | DownloadStatus::Muxing
             ) {
                 t.status = DownloadStatus::Paused;
                 t.speed_bps = 0;
