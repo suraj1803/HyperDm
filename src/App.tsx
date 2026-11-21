@@ -20,14 +20,12 @@ import {
   Search,
   Settings,
   Split,
-  Square,
   Sun,
   Trash2,
   X,
   Zap,
 } from "lucide-react";
 import {
-  cancelDownload,
   getSettings,
   listDownloads,
   onBrowserDownload,
@@ -216,11 +214,6 @@ export function App() {
       );
     });
   }, [tasks, filter, searchQuery]);
-
-  const selectedTask = useMemo(
-    () => tasks.find((t) => t.id === selectedId) ?? null,
-    [tasks, selectedId]
-  );
 
   const inspectedTask = useMemo(
     () => tasks.find((t) => t.id === inspectId) ?? null,
@@ -431,75 +424,6 @@ export function App() {
             boxShadow: "var(--md-shadow-1)",
           }}
         >
-          {/* Contextual Selection Bar */}
-          {selectedTask && (
-            <div
-              className="flex items-center justify-between gap-3 px-5 py-2.5"
-              style={{
-                backgroundColor: "var(--md-surface-container-high)",
-                borderBottom: "1px solid color-mix(in srgb, var(--md-outline-variant) 40%, transparent)",
-              }}
-            >
-              <div className="flex min-w-0 items-center gap-2 text-xs font-medium">
-                <button
-                  onClick={() => setSelectedId(null)}
-                  className="md-icon-btn p-1"
-                  title="Clear selection"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-                <span className="truncate">{selectedTask.fileName}</span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                {selectedTask.status === "downloading" ? (
-                  <button
-                    onClick={() => void pauseDownload(selectedTask.id)}
-                    className="md-btn-tonal flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
-                  >
-                    <Pause className="h-3.5 w-3.5" />
-                    Pause
-                  </button>
-                ) : selectedTask.status !== "completed" ? (
-                  <button
-                    onClick={() => void resumeDownload(selectedTask.id)}
-                    className="md-btn-filled flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold cursor-pointer"
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                    Resume
-                  </button>
-                ) : null}
-
-                {selectedTask.status !== "completed" && selectedTask.status !== "cancelled" && (
-                  <button
-                    onClick={() => void cancelDownload(selectedTask.id)}
-                    className="md-btn-outlined flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
-                  >
-                    <Square className="h-3.5 w-3.5" />
-                    Stop
-                  </button>
-                )}
-
-                <button
-                  onClick={() => setInspectId(selectedTask.id)}
-                  className="md-btn-outlined flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
-                >
-                  <BarChart3 className="h-3.5 w-3.5" />
-                  Statistics
-                </button>
-
-                <button
-                  onClick={() => void handleRemove(selectedTask.id)}
-                  className="md-icon-btn p-2 cursor-pointer"
-                  style={{ color: "var(--md-error)" }}
-                  title="Remove from list"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Downloads List */}
           <div className="flex-1 overflow-y-auto p-3">
             {filteredTasks.length === 0 ? (
