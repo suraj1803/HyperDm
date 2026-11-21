@@ -130,7 +130,7 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [filter, setFilter] = useState<FilterTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activatedId, setActivatedId] = useState<string | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [pendingYouTubeUrl, setPendingYouTubeUrl] = useState<string | null>(null);
@@ -173,7 +173,6 @@ export function App() {
 
         unlistenBrowser = await onBrowserDownload((incoming) => {
           setTasks((prev) => [incoming, ...prev.filter((t) => t.id !== incoming.id)]);
-          setSelectedId(incoming.id);
           setInspectId(incoming.id);
         });
 
@@ -245,8 +244,15 @@ export function App() {
   async function handleRemove(id: string) {
     await removeDownload(id, false);
     setTasks((prev) => prev.filter((t) => t.id !== id));
-    if (selectedId === id) setSelectedId(null);
     if (inspectId === id) setInspectId(null);
+  }
+
+  function handleRowDoubleClick(task: DownloadTaskInfo) {
+    setActivatedId(task.id);
+    window.setTimeout(() => {
+      setActivatedId((curr) => (curr === task.id ? null : curr));
+    }, 280);
+    void openPath(task.fullPath, task.status !== "completed");
   }
 
   return (
@@ -463,7 +469,7 @@ export function App() {
                 {filteredTasks.map((task) => {
                   const pct = progressPercent(task.downloaded, task.totalSize);
                   const chip = getStatusChipStyle(task.status);
-                  const isSelected = task.id === selectedId;
+                  const isActivated = task.id === activatedId;
                   const FileIcon = getFileIcon(task.fileName);
                   const activeConns = task.segments.filter(
                     (s) => s.status === "downloading" || s.status === "connecting"
@@ -472,21 +478,14 @@ export function App() {
                   return (
                     <div
                       key={task.id}
-                      onClick={() => setSelectedId(task.id)}
-                      onDoubleClick={() =>
-                        void openPath(task.fullPath, task.status !== "completed")
-                      }
+                      data-activated={isActivated}
+                      onDoubleClick={() => handleRowDoubleClick(task)}
                       title={
                         task.status === "completed"
                           ? "Double-click to open file"
                           : "Double-click to open save folder"
                       }
-                      className="group flex items-center gap-4 rounded-2xl px-4 py-3 transition-colors cursor-pointer"
-                      style={{
-                        backgroundColor: isSelected
-                          ? "var(--md-surface-container-highest)"
-                          : "var(--md-surface-container)",
-                      }}
+                      className="md-download-row group flex items-center gap-4 rounded-2xl px-4 py-3 cursor-pointer"
                     >
                       {/* File Type Tonal Avatar */}
                       <div
@@ -652,7 +651,6 @@ export function App() {
         }}
         onCreated={(task) => {
           setTasks((prev) => [task, ...prev.filter((t) => t.id !== task.id)]);
-          setSelectedId(task.id);
           setInspectId(task.id);
         }}
       />
