@@ -36,7 +36,10 @@ use crate::engine::prober::build_header_map;
 use crate::engine::segment::LiveSegment;
 
 const MAX_RETRIES: u32 = 5;
-const WRITE_BUFFER_THRESHOLD: usize = 128 * 1024; // 128 KiB buffered flush to minimize syscalls
+const WRITE_BUFFER_THRESHOLD: usize = 512 * 1024; // 512 KiB buffered flush to reduce spawn_blocking overhead
+/// YouTube's googlevideo CDN throttles individual Range requests >= ~10 MiB.
+/// Capping each sub-range request to 8 MiB over HTTP/1.1 Keep-Alive keeps full line speed.
+const YOUTUBE_SUB_RANGE_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Debug)]
 pub enum WorkerOutcome {
@@ -58,6 +61,7 @@ pub async fn run_range_worker(
 ) -> WorkerOutcome {
     let seg_id = segment.id;
     let extra_headers = build_header_map(&custom_headers);
+    let is_googlevideo = url.contains("googlevideo.com");
     let mut attempt: u32 = 0;
 
     loop {
@@ -75,12 +79,19 @@ pub async fn run_range_worker(
             return WorkerOutcome::Completed { segment_id: seg_id };
         };
 
+        let req_end = if is_googlevideo {
+            range_end.min(range_start.saturating_add(YOUTUBE_SUB_RANGE_BYTES - 1))
+        } else {
+            range_end
+        };
+        let is_sub_ranged = req_end < range_end;
+
         segment.set_status(SegmentStatus::Connecting);
 
         let mut req = client
             .get(&url)
             .headers(extra_headers.clone())
-            .header(header::RANGE, format!("bytes={}-{}", range_start, range_end));
+            .header(header::RANGE, format!("bytes={}-{}", range_start, req_end));
         if let Some(ref tag) = etag {
             req = req.header(header::IF_RANGE, tag);
         }
@@ -225,6 +236,17 @@ pub async fn run_range_worker(
             return WorkerOutcome::Completed { segment_id: seg_id };
         }
 
+        // If we intentionally requested an 8 MiB sub-range (e.g., googlevideo.com) and it finished cleanly,
+        // immediately continue to the next sub-range over the same HTTP/1.1 Keep-Alive connection.
+        if is_sub_ranged && stream_err.is_none() {
+            if let Some((next_start, _)) = segment.next_range() {
+                if next_start > req_end {
+                    attempt = 0;
+                    continue;
+                }
+            }
+        }
+
         // Stream ended prematurely or errored -> retry from updated offset
         attempt += 1;
         segment.retries.store(attempt, Ordering::Relaxed);
@@ -262,9 +284,9 @@ async fn flush_buffer(
     };
 
     let to_write = allowed_len as usize;
-    let payload: Vec<u8> = buf[..to_write].to_vec();
     let hit_bound = to_write < buf.len();
-    buf.clear();
+    let mut payload = std::mem::replace(buf, Vec::with_capacity(WRITE_BUFFER_THRESHOLD + 65536));
+    payload.truncate(to_write);
 
     let file_clone = Arc::clone(file);
     let write_res =
