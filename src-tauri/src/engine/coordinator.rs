@@ -363,45 +363,125 @@ async fn download_companion_audio(
     dest: &Path,
     cancel: &CancellationToken,
 ) -> Result<(), DownloadError> {
+    const MAX_AUDIO_RETRIES: u32 = 5;
+    const AUDIO_CHUNK: u64 = 4 * 1024 * 1024;
+
     let extra = build_header_map(headers);
     let mut file = File::create(dest)?;
 
-    // Probe audio size & range support so we can fetch in fast 4 MiB sub-ranges (avoids googlevideo throttling)
-    let probe = crate::engine::prober::probe_url(client, audio_url, headers).await;
-    if let Ok(p) = probe {
+    // Probe audio size & range support (with retries for transient googlevideo socket resets)
+    let mut probed = None;
+    for attempt in 0..3u32 {
+        if cancel.is_cancelled() {
+            return Err(DownloadError::Cancelled);
+        }
+        match crate::engine::prober::probe_url(client, audio_url, headers).await {
+            Ok(p) => {
+                probed = Some(p);
+                break;
+            }
+            Err(_) if attempt < 2 => {
+                tokio::time::sleep(Duration::from_millis(300 * (attempt as u64 + 1))).await;
+            }
+            Err(_) => break,
+        }
+    }
+
+    if let Some(p) = probed {
         if p.supports_range {
             if let Some(total) = p.total_size {
-                const AUDIO_CHUNK: u64 = 4 * 1024 * 1024;
                 let mut offset: u64 = 0;
+                let mut attempt: u32 = 0;
+
                 while offset < total {
                     if cancel.is_cancelled() {
                         return Err(DownloadError::Cancelled);
                     }
                     let end = (offset + AUDIO_CHUNK - 1).min(total - 1);
-                    let resp = tokio::select! {
-                        _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
-                        r = tokio::time::timeout(
-                            Duration::from_secs(30),
-                            client
-                                .get(&p.final_url)
-                                .headers(extra.clone())
-                                .header(reqwest::header::RANGE, format!("bytes={}-{}", offset, end))
-                                .send(),
-                        ) => r.map_err(|_| DownloadError::MediaTool("Audio chunk request timed out".into()))??,
-                    };
-                    if !resp.status().is_success() && resp.status().as_u16() != 206 {
-                        return Err(DownloadError::HttpStatus(resp.status().as_u16()));
+                    let mut req = client
+                        .get(&p.final_url)
+                        .headers(extra.clone())
+                        .header(reqwest::header::RANGE, format!("bytes={}-{}", offset, end));
+                    if attempt > 0 {
+                        // Force a fresh TCP/TLS socket on retry instead of reusing a stale pooled socket
+                        req = req.header(reqwest::header::CONNECTION, "close");
                     }
-                    let mut stream = resp.bytes_stream();
-                    while let Some(chunk) = tokio::select! {
+
+                    let send_res = tokio::select! {
                         _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
-                        c = tokio::time::timeout(Duration::from_secs(30), stream.next()) => {
-                            c.map_err(|_| DownloadError::MediaTool("Audio stream stalled".into()))?
+                        r = tokio::time::timeout(Duration::from_secs(30), req.send()) => r,
+                    };
+
+                    let resp = match send_res {
+                        Ok(Ok(r)) if r.status().is_success() || r.status().as_u16() == 206 => r,
+                        Ok(Ok(r)) => {
+                            attempt += 1;
+                            if attempt > MAX_AUDIO_RETRIES {
+                                return Err(DownloadError::HttpStatus(r.status().as_u16()));
+                            }
+                            let delay = (300u64 * (1u64 << (attempt - 1))).min(4000);
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                            continue;
                         }
-                    } {
-                        let bytes = chunk?;
-                        file.write_all(&bytes)?;
-                        offset += bytes.len() as u64;
+                        Ok(Err(e)) => {
+                            attempt += 1;
+                            if attempt > MAX_AUDIO_RETRIES {
+                                return Err(DownloadError::Http(e));
+                            }
+                            let delay = (300u64 * (1u64 << (attempt - 1))).min(4000);
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                            continue;
+                        }
+                        Err(_) => {
+                            attempt += 1;
+                            if attempt > MAX_AUDIO_RETRIES {
+                                return Err(DownloadError::MediaTool(
+                                    "Audio chunk request timed out".into(),
+                                ));
+                            }
+                            let delay = (300u64 * (1u64 << (attempt - 1))).min(4000);
+                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                            continue;
+                        }
+                    };
+
+                    let mut stream = resp.bytes_stream();
+                    let mut chunk_err: Option<DownloadError> = None;
+
+                    loop {
+                        let next = tokio::select! {
+                            _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+                            c = tokio::time::timeout(Duration::from_secs(30), stream.next()) => c,
+                        };
+                        match next {
+                            Ok(Some(Ok(bytes))) => {
+                                if !bytes.is_empty() {
+                                    file.write_all(&bytes)?;
+                                    offset += bytes.len() as u64;
+                                    attempt = 0;
+                                }
+                            }
+                            Ok(Some(Err(e))) => {
+                                chunk_err = Some(DownloadError::Http(e));
+                                break;
+                            }
+                            Ok(None) => break,
+                            Err(_) => {
+                                chunk_err = Some(DownloadError::MediaTool(
+                                    "Audio stream stalled".into(),
+                                ));
+                                break;
+                            }
+                        }
+                    }
+
+                    if let Some(err) = chunk_err {
+                        attempt += 1;
+                        if attempt > MAX_AUDIO_RETRIES {
+                            return Err(err);
+                        }
+                        let delay = (300u64 * (1u64 << (attempt - 1))).min(4000);
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
                     }
                 }
                 file.sync_all()?;
@@ -410,29 +490,81 @@ async fn download_companion_audio(
         }
     }
 
-    // Fallback single-stream audio download with timeout & cancellation
-    let resp = tokio::select! {
-        _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
-        r = tokio::time::timeout(
-            Duration::from_secs(30),
-            client.get(audio_url).headers(extra).send(),
-        ) => r.map_err(|_| DownloadError::MediaTool("Audio request timed out".into()))??,
-    };
-    if !resp.status().is_success() {
-        return Err(DownloadError::HttpStatus(resp.status().as_u16()));
-    }
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = tokio::select! {
-        _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
-        c = tokio::time::timeout(Duration::from_secs(30), stream.next()) => {
-            c.map_err(|_| DownloadError::MediaTool("Audio stream stalled".into()))?
+    // Fallback single-stream audio download with retries, timeout & cancellation
+    let mut attempt: u32 = 0;
+    loop {
+        if cancel.is_cancelled() {
+            return Err(DownloadError::Cancelled);
         }
-    } {
-        let bytes = chunk?;
-        file.write_all(&bytes)?;
+        let mut req = client.get(audio_url).headers(extra.clone());
+        if attempt > 0 {
+            req = req.header(reqwest::header::CONNECTION, "close");
+        }
+        let resp = match tokio::select! {
+            _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+            r = tokio::time::timeout(Duration::from_secs(30), req.send()) => r,
+        } {
+            Ok(Ok(r)) if r.status().is_success() => r,
+            Ok(Ok(r)) => {
+                attempt += 1;
+                if attempt > MAX_AUDIO_RETRIES {
+                    return Err(DownloadError::HttpStatus(r.status().as_u16()));
+                }
+                tokio::time::sleep(Duration::from_millis(400 * attempt as u64)).await;
+                continue;
+            }
+            Ok(Err(e)) => {
+                attempt += 1;
+                if attempt > MAX_AUDIO_RETRIES {
+                    return Err(DownloadError::Http(e));
+                }
+                tokio::time::sleep(Duration::from_millis(400 * attempt as u64)).await;
+                continue;
+            }
+            Err(_) => {
+                attempt += 1;
+                if attempt > MAX_AUDIO_RETRIES {
+                    return Err(DownloadError::MediaTool("Audio request timed out".into()));
+                }
+                tokio::time::sleep(Duration::from_millis(400 * attempt as u64)).await;
+                continue;
+            }
+        };
+
+        let mut file = File::create(dest)?;
+        let mut stream = resp.bytes_stream();
+        let mut failed = None;
+        while let Some(chunk) = match tokio::select! {
+            _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
+            c = tokio::time::timeout(Duration::from_secs(30), stream.next()) => c,
+        } {
+            Ok(c) => c,
+            Err(_) => {
+                failed = Some(DownloadError::MediaTool("Audio stream stalled".into()));
+                None
+            }
+        } {
+            match chunk {
+                Ok(bytes) => file.write_all(&bytes)?,
+                Err(e) => {
+                    failed = Some(DownloadError::Http(e));
+                    break;
+                }
+            }
+        }
+
+        if let Some(err) = failed {
+            attempt += 1;
+            if attempt > MAX_AUDIO_RETRIES {
+                return Err(err);
+            }
+            tokio::time::sleep(Duration::from_millis(400 * attempt as u64)).await;
+            continue;
+        }
+
+        file.sync_all()?;
+        return Ok(());
     }
-    file.sync_all()?;
-    Ok(())
 }
 
 async fn finalize_download(

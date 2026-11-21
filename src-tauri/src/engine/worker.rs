@@ -92,6 +92,9 @@ pub async fn run_range_worker(
             .get(&url)
             .headers(extra_headers.clone())
             .header(header::RANGE, format!("bytes={}-{}", range_start, req_end));
+        if attempt > 0 {
+            req = req.header(header::CONNECTION, "close");
+        }
         if let Some(ref tag) = etag {
             req = req.header(header::IF_RANGE, tag);
         }
