@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  BarChart3,
   CheckCircle2,
   Download,
   FileArchive,
@@ -19,18 +20,17 @@ import {
   Search,
   Settings,
   Split,
-  Square,
   Sun,
   Trash2,
   X,
   Zap,
 } from "lucide-react";
 import {
-  cancelDownload,
   getSettings,
   listDownloads,
   onBrowserDownload,
   onDownloadProgress,
+  onYouTubeOpen,
   openPath,
   pauseDownload,
   removeDownload,
@@ -80,6 +80,12 @@ function getStatusChipStyle(status: DownloadStatus): { label: string; bg: string
         bg: "var(--md-primary-container)",
         fg: "var(--md-on-primary-container)",
       };
+    case "muxing":
+      return {
+        label: "Merging…",
+        bg: "var(--md-secondary-container)",
+        fg: "var(--md-on-secondary-container)",
+      };
     case "completed":
       return {
         label: "Completed",
@@ -124,9 +130,12 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [filter, setFilter] = useState<FilterTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activatedId, setActivatedId] = useState<string | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState<DownloadTaskInfo | null>(null);
+  const [deleteFromDisk, setDeleteFromDisk] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [pendingYouTubeUrl, setPendingYouTubeUrl] = useState<string | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(() => {
     const saved = localStorage.getItem("hyperdm-theme");
@@ -141,6 +150,7 @@ export function App() {
   useEffect(() => {
     let unlistenProgress: (() => void) | undefined;
     let unlistenBrowser: (() => void) | undefined;
+    let unlistenYouTube: (() => void) | undefined;
 
     async function bootstrap() {
       try {
@@ -165,8 +175,12 @@ export function App() {
 
         unlistenBrowser = await onBrowserDownload((incoming) => {
           setTasks((prev) => [incoming, ...prev.filter((t) => t.id !== incoming.id)]);
-          setSelectedId(incoming.id);
           setInspectId(incoming.id);
+        });
+
+        unlistenYouTube = await onYouTubeOpen((ytUrl) => {
+          setPendingYouTubeUrl(ytUrl);
+          setShowAddModal(true);
         });
       } catch (err) {
         console.error("Failed to initialize HyperDM:", err);
@@ -177,6 +191,7 @@ export function App() {
     return () => {
       if (unlistenProgress) unlistenProgress();
       if (unlistenBrowser) unlistenBrowser();
+      if (unlistenYouTube) unlistenYouTube();
     };
   }, []);
 
@@ -200,11 +215,6 @@ export function App() {
       );
     });
   }, [tasks, filter, searchQuery]);
-
-  const selectedTask = useMemo(
-    () => tasks.find((t) => t.id === selectedId) ?? null,
-    [tasks, selectedId]
-  );
 
   const inspectedTask = useMemo(
     () => tasks.find((t) => t.id === inspectId) ?? null,
@@ -233,11 +243,18 @@ export function App() {
     [tasks]
   );
 
-  async function handleRemove(id: string) {
-    await removeDownload(id, false);
+  async function handleRemove(id: string, alsoDeleteFile: boolean) {
+    await removeDownload(id, alsoDeleteFile);
     setTasks((prev) => prev.filter((t) => t.id !== id));
-    if (selectedId === id) setSelectedId(null);
     if (inspectId === id) setInspectId(null);
+  }
+
+  function handleRowDoubleClick(task: DownloadTaskInfo) {
+    setActivatedId(task.id);
+    window.setTimeout(() => {
+      setActivatedId((curr) => (curr === task.id ? null : curr));
+    }, 280);
+    void openPath(task.fullPath, task.status !== "completed");
   }
 
   return (
@@ -415,75 +432,6 @@ export function App() {
             boxShadow: "var(--md-shadow-1)",
           }}
         >
-          {/* Contextual Selection Bar */}
-          {selectedTask && (
-            <div
-              className="flex items-center justify-between gap-3 px-5 py-2.5"
-              style={{
-                backgroundColor: "var(--md-surface-container-high)",
-                borderBottom: "1px solid color-mix(in srgb, var(--md-outline-variant) 40%, transparent)",
-              }}
-            >
-              <div className="flex min-w-0 items-center gap-2 text-xs font-medium">
-                <button
-                  onClick={() => setSelectedId(null)}
-                  className="md-icon-btn p-1"
-                  title="Clear selection"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-                <span className="truncate">{selectedTask.fileName}</span>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                {selectedTask.status === "downloading" ? (
-                  <button
-                    onClick={() => void pauseDownload(selectedTask.id)}
-                    className="md-btn-tonal flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
-                  >
-                    <Pause className="h-3.5 w-3.5" />
-                    Pause
-                  </button>
-                ) : selectedTask.status !== "completed" ? (
-                  <button
-                    onClick={() => void resumeDownload(selectedTask.id)}
-                    className="md-btn-filled flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold cursor-pointer"
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                    Resume
-                  </button>
-                ) : null}
-
-                {selectedTask.status !== "completed" && selectedTask.status !== "cancelled" && (
-                  <button
-                    onClick={() => void cancelDownload(selectedTask.id)}
-                    className="md-btn-outlined flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
-                  >
-                    <Square className="h-3.5 w-3.5" />
-                    Stop
-                  </button>
-                )}
-
-                <button
-                  onClick={() => setInspectId(selectedTask.id)}
-                  className="md-btn-outlined flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium cursor-pointer"
-                >
-                  <Split className="h-3.5 w-3.5" />
-                  Segments
-                </button>
-
-                <button
-                  onClick={() => void handleRemove(selectedTask.id)}
-                  className="md-icon-btn p-2 cursor-pointer"
-                  style={{ color: "var(--md-error)" }}
-                  title="Remove from list"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
           {/* Downloads List */}
           <div className="flex-1 overflow-y-auto p-3">
             {filteredTasks.length === 0 ? (
@@ -523,7 +471,7 @@ export function App() {
                 {filteredTasks.map((task) => {
                   const pct = progressPercent(task.downloaded, task.totalSize);
                   const chip = getStatusChipStyle(task.status);
-                  const isSelected = task.id === selectedId;
+                  const isActivated = task.id === activatedId;
                   const FileIcon = getFileIcon(task.fileName);
                   const activeConns = task.segments.filter(
                     (s) => s.status === "downloading" || s.status === "connecting"
@@ -532,14 +480,14 @@ export function App() {
                   return (
                     <div
                       key={task.id}
-                      onClick={() => setSelectedId(task.id)}
-                      onDoubleClick={() => setInspectId(task.id)}
-                      className="group flex items-center gap-4 rounded-2xl px-4 py-3 transition-colors cursor-pointer"
-                      style={{
-                        backgroundColor: isSelected
-                          ? "var(--md-surface-container-highest)"
-                          : "var(--md-surface-container)",
-                      }}
+                      data-activated={isActivated}
+                      onDoubleClick={() => handleRowDoubleClick(task)}
+                      title={
+                        task.status === "completed"
+                          ? "Double-click to open file"
+                          : "Double-click to open save folder"
+                      }
+                      className="md-download-row group flex items-center gap-4 rounded-2xl px-4 py-3 cursor-pointer"
                     >
                       {/* File Type Tonal Avatar */}
                       <div
@@ -613,6 +561,18 @@ export function App() {
                                 <span>{formatEta(task.etaSeconds)} left</span>
                               </>
                             )}
+                            {task.status === "error" && task.errorMessage && (
+                              <>
+                                <span>·</span>
+                                <span
+                                  className="truncate max-w-[320px]"
+                                  style={{ color: "var(--md-error)" }}
+                                  title={task.errorMessage}
+                                >
+                                  {task.errorMessage}
+                                </span>
+                              </>
+                            )}
                           </div>
 
                           <button
@@ -639,7 +599,16 @@ export function App() {
                       <div
                         className="flex shrink-0 items-center gap-1"
                         onClick={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
                       >
+                        <button
+                          onClick={() => setInspectId(task.id)}
+                          className="md-icon-btn p-2 cursor-pointer"
+                          title="View download statistics & segments"
+                        >
+                          <BarChart3 className="h-4.5 w-4.5" />
+                        </button>
+
                         {task.status === "downloading" ? (
                           <button
                             onClick={() => void pauseDownload(task.id)}
@@ -669,7 +638,10 @@ export function App() {
                         ) : null}
 
                         <button
-                          onClick={() => void handleRemove(task.id)}
+                          onClick={() => {
+                            setDeleteFromDisk(false);
+                            setConfirmDeleteTask(task);
+                          }}
                           className="md-icon-btn p-2 cursor-pointer"
                           title="Remove"
                         >
@@ -688,11 +660,14 @@ export function App() {
       {/* Material 3 Dialogs */}
       <AddDownloadModal
         isOpen={showAddModal}
+        initialUrl={pendingYouTubeUrl}
         settings={settings}
-        onClose={() => setShowAddModal(false)}
+        onClose={() => {
+          setShowAddModal(false);
+          setPendingYouTubeUrl(null);
+        }}
         onCreated={(task) => {
           setTasks((prev) => [task, ...prev.filter((t) => t.id !== task.id)]);
-          setSelectedId(task.id);
           setInspectId(task.id);
         }}
       />
@@ -708,6 +683,69 @@ export function App() {
         onClose={() => setShowSettingsModal(false)}
         onSaved={(updated) => setSettings(updated)}
       />
+
+      {/* Material 3 Delete Confirmation Dialog */}
+      {confirmDeleteTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4">
+          <div
+            className="w-full max-w-md rounded-[28px] p-6"
+            style={{
+              backgroundColor: "var(--md-surface-container-high)",
+              boxShadow: "var(--md-shadow-3)",
+            }}
+          >
+            <h3 className="text-base font-medium">Remove download?</h3>
+            <p
+              className="mt-2 break-all text-xs leading-relaxed"
+              style={{ color: "var(--md-on-surface-variant)" }}
+            >
+              {confirmDeleteTask.fileName}
+            </p>
+
+            {confirmDeleteTask.status === "completed" && (
+              <label
+                className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl px-3.5 py-3 text-xs"
+                style={{ backgroundColor: "var(--md-surface-container)" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={deleteFromDisk}
+                  onChange={(e) => setDeleteFromDisk(e.target.checked)}
+                  className="h-4 w-4 accent-rose-500"
+                />
+                <span>Also delete the downloaded file from disk</span>
+              </label>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteTask(null)}
+                className="rounded-full px-5 py-2 text-xs font-medium cursor-pointer"
+                style={{ color: "var(--md-primary)" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = confirmDeleteTask;
+                  const fromDisk = deleteFromDisk;
+                  setConfirmDeleteTask(null);
+                  void handleRemove(target.id, fromDisk);
+                }}
+                className="rounded-full px-5 py-2 text-xs font-semibold cursor-pointer"
+                style={{
+                  backgroundColor: "var(--md-error-container)",
+                  color: "var(--md-on-error-container)",
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

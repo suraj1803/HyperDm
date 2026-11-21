@@ -11,6 +11,14 @@ use crate::engine::models::{DownloadError, ProbeResult};
 pub fn build_header_map(custom: &HashMap<String, String>) -> HeaderMap {
     let mut map = HeaderMap::new();
     for (k, v) in custom {
+        let lower = k.to_ascii_lowercase();
+        // Skip hop-by-hop or range/encoding headers that interfere with raw parallel byte-range streaming
+        if matches!(
+            lower.as_str(),
+            "accept-encoding" | "range" | "connection" | "host" | "content-length"
+        ) {
+            continue;
+        }
         if let (Ok(name), Ok(val)) = (
             HeaderName::from_bytes(k.as_bytes()),
             HeaderValue::from_str(v),
@@ -24,8 +32,11 @@ pub fn build_header_map(custom: &HashMap<String, String>) -> HeaderMap {
 pub fn build_http_client() -> Result<Client, DownloadError> {
     Client::builder()
         .user_agent("HyperDM/0.1.0 (High-Speed Download Manager)")
+        // Force HTTP/1.1 so each parallel worker opens its own dedicated TCP socket
+        // instead of multiplexing all segments over a single HTTP/2 connection.
+        .http1_only()
         .tcp_nodelay(true)
-        .pool_max_idle_per_host(32)
+        .pool_max_idle_per_host(64)
         .connect_timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()

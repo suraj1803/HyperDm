@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, Settings as SettingsIcon, X } from "lucide-react";
-import { pickDirectory, updateSettings } from "../api/tauri";
-import type { AppSettings } from "../types/download";
+import { DownloadCloud, FolderOpen, Loader2, Settings as SettingsIcon, X } from "lucide-react";
+import {
+  getMediaToolsStatus,
+  installFfmpeg,
+  installYtDlp,
+  pickDirectory,
+  updateSettings,
+} from "../api/tauri";
+import type { AppSettings, MediaToolsStatus } from "../types/download";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,6 +28,9 @@ export function SettingsModal({
   const [bridgeEnabled, setBridgeEnabled] = useState(settings.bridgeEnabled);
   const [bridgePort, setBridgePort] = useState(settings.bridgePort);
   const [minimizeToTray, setMinimizeToTray] = useState(settings.minimizeToTray);
+  const [tools, setTools] = useState<MediaToolsStatus | null>(null);
+  const [installingYtDlp, setInstallingYtDlp] = useState(false);
+  const [installingFfmpeg, setInstallingFfmpeg] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -32,8 +41,29 @@ export function SettingsModal({
       setBridgeEnabled(settings.bridgeEnabled);
       setBridgePort(settings.bridgePort);
       setMinimizeToTray(settings.minimizeToTray);
+      void getMediaToolsStatus().then(setTools).catch(() => {});
     }
   }, [isOpen, settings]);
+
+  async function handleInstallYtDlp() {
+    setInstallingYtDlp(true);
+    try {
+      const updated = await installYtDlp();
+      setTools(updated);
+    } finally {
+      setInstallingYtDlp(false);
+    }
+  }
+
+  async function handleInstallFfmpeg() {
+    setInstallingFfmpeg(true);
+    try {
+      const updated = await installFfmpeg();
+      setTools(updated);
+    } finally {
+      setInstallingFfmpeg(false);
+    }
+  }
 
   if (!isOpen) return null;
 
@@ -239,6 +269,53 @@ export function SettingsModal({
             >
               <span className="md-switch-thumb" />
             </button>
+          </div>
+
+          {/* YouTube & Media Tools */}
+          <div
+            className="space-y-2.5 rounded-2xl p-4"
+            style={{ backgroundColor: "var(--md-surface-container)" }}
+          >
+            <div>
+              <div className="text-xs font-medium">YouTube & Media Tools (Zero-Setup)</div>
+              <div className="text-[11px]" style={{ color: "var(--md-on-surface-variant)" }}>
+                Both tools auto-install on first use if not already present on your system.
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div className="text-[11px]" style={{ color: "var(--md-on-surface-variant)" }}>
+                yt-dlp: <strong style={{ color: "var(--md-on-surface)" }}>{tools?.ytdlpInstalled ? "Ready" : "Auto"}</strong> ·
+                ffmpeg: <strong style={{ color: "var(--md-on-surface)" }}>{tools?.ffmpegInstalled ? "Ready" : "Auto"}</strong>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={installingYtDlp}
+                  onClick={() => void handleInstallYtDlp()}
+                  className="md-btn-tonal flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium cursor-pointer"
+                >
+                  {installingYtDlp ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <DownloadCloud className="h-3.5 w-3.5" />
+                  )}
+                  {tools?.ytdlpInstalled ? "Update yt-dlp" : "Install yt-dlp"}
+                </button>
+                <button
+                  type="button"
+                  disabled={installingFfmpeg}
+                  onClick={() => void handleInstallFfmpeg()}
+                  className="md-btn-tonal flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium cursor-pointer"
+                >
+                  {installingFfmpeg ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <DownloadCloud className="h-3.5 w-3.5" />
+                  )}
+                  {tools?.ffmpegInstalled ? "Update ffmpeg" : "Install ffmpeg"}
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Footer Actions */}

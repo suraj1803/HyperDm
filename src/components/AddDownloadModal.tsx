@@ -1,26 +1,84 @@
 import { useEffect, useState } from "react";
 import {
+  Check,
+  Film,
   FolderOpen,
   Globe,
   Loader2,
+  Music,
   ShieldAlert,
   Sparkles,
   X,
   Zap,
 } from "lucide-react";
-import { addDownload, pickDirectory, probeUrl } from "../api/tauri";
-import type { AppSettings, DownloadTaskInfo, ProbeResult } from "../types/download";
+import { addDownload, pickDirectory, probeUrl, probeYouTube } from "../api/tauri";
+import type {
+  AppSettings,
+  DownloadTaskInfo,
+  ProbeResult,
+  YouTubeFormatOption,
+  YouTubeProbeResult,
+} from "../types/download";
 import { formatBytes } from "../utils/format";
 
 interface AddDownloadModalProps {
   isOpen: boolean;
+  initialUrl?: string | null;
   settings: AppSettings;
   onClose: () => void;
   onCreated: (task: DownloadTaskInfo) => void;
 }
 
+function isYouTubeLink(raw: string): boolean {
+  try {
+    const u = new URL(raw.trim());
+    const h = u.hostname.toLowerCase();
+    const isYt =
+      h === "youtube.com" ||
+      h.endsWith(".youtube.com") ||
+      h === "youtu.be" ||
+      h.endsWith(".youtu.be");
+    if (!isYt) return false;
+    if (h === "youtu.be" || h.endsWith(".youtu.be")) {
+      return u.pathname.replace(/^\/+|\/+$/g, "").length >= 6;
+    }
+    return (
+      u.pathname.startsWith("/watch") ||
+      u.pathname.startsWith("/shorts/") ||
+      u.pathname.startsWith("/live/") ||
+      u.pathname.startsWith("/embed/")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function formatDuration(sec: number | null): string {
+  if (!sec || sec <= 0) return "";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+function sanitizeFileStem(title: string): string {
+  return title
+    .replace(/[/\\:*?"<>|]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
+}
+
+function buildYouTubeFileName(title: string, fmt: YouTubeFormatOption): string {
+  const stem = sanitizeFileStem(title) || "YouTube Video";
+  const tag = fmt.isAudioOnly ? "Audio" : fmt.height ? `${fmt.height}p` : "Video";
+  return `${stem} [${tag}].${fmt.ext}`;
+}
+
 export function AddDownloadModal({
   isOpen,
+  initialUrl,
   settings,
   onClose,
   onCreated,
@@ -30,41 +88,81 @@ export function AddDownloadModal({
   const [fileName, setFileName] = useState("");
   const [maxConnections, setMaxConnections] = useState(settings.maxConnectionsPerDownload);
   const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [ytProbe, setYtProbe] = useState<YouTubeProbeResult | null>(null);
+  const [selectedFormatId, setSelectedFormatId] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
+  const [probingYouTube, setProbingYouTube] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      setUrl("");
-      setSaveDir(settings.defaultSaveDir);
-      setFileName("");
-      setMaxConnections(settings.maxConnectionsPerDownload);
-      setProbe(null);
-      setError(null);
-      setProbing(false);
-      setSubmitting(false);
-    }
-  }, [isOpen, settings]);
-
-  if (!isOpen) return null;
-
-  async function handleProbe() {
-    const trimmed = url.trim();
+  async function runProbe(targetUrl: string) {
+    const trimmed = targetUrl.trim();
     if (!trimmed) return;
     setProbing(true);
     setError(null);
+    setProbe(null);
+    setYtProbe(null);
+    setSelectedFormatId(null);
+
+    if (isYouTubeLink(trimmed)) {
+      setProbingYouTube(true);
+      try {
+        const yt = await probeYouTube(trimmed);
+        setYtProbe(yt);
+        // Pick highest compatible format (prefer 1080p or best available)
+        const preferred =
+          yt.formats.find((f) => (!f.needsMux || yt.ffmpegAvailable) && f.height === 1080) ??
+          yt.formats.find((f) => !f.needsMux || yt.ffmpegAvailable) ??
+          yt.formats[0];
+        if (preferred) {
+          setSelectedFormatId(preferred.id);
+          setFileName(buildYouTubeFileName(yt.title, preferred));
+        }
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setProbing(false);
+        setProbingYouTube(false);
+      }
+      return;
+    }
+
     try {
       const result = await probeUrl(trimmed);
       setProbe(result);
       setFileName(result.fileName);
     } catch (err) {
-      setProbe(null);
       setError(String(err));
     } finally {
       setProbing(false);
     }
   }
+
+  useEffect(() => {
+    if (isOpen) {
+      const startUrl = initialUrl?.trim() ?? "";
+      setUrl(startUrl);
+      setSaveDir(settings.defaultSaveDir);
+      setFileName("");
+      setMaxConnections(settings.maxConnectionsPerDownload);
+      setProbe(null);
+      setYtProbe(null);
+      setSelectedFormatId(null);
+      setError(null);
+      setProbing(false);
+      setProbingYouTube(false);
+      setSubmitting(false);
+
+      if (startUrl) {
+        void runProbe(startUrl);
+      }
+    }
+  }, [isOpen, initialUrl, settings]);
+
+  if (!isOpen) return null;
+
+  const selectedYtFormat =
+    ytProbe?.formats.find((f) => f.id === selectedFormatId) ?? null;
 
   async function handleBrowse() {
     try {
@@ -79,20 +177,51 @@ export function AddDownloadModal({
     e.preventDefault();
     const trimmed = url.trim();
     if (!trimmed) {
-      setError("Please enter a valid HTTP/HTTPS download URL.");
+      setError("Please enter a valid HTTP/HTTPS or YouTube URL.");
       return;
     }
+
+    // If user pasted a YouTube URL and hit Enter before probing finished
+    if (isYouTubeLink(trimmed) && !ytProbe) {
+      await runProbe(trimmed);
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
-      const task = await addDownload({
-        url: trimmed,
-        saveDir: saveDir.trim() || undefined,
-        fileName: fileName.trim() || undefined,
-        maxConnections,
-      });
-      onCreated(task);
-      onClose();
+      if (ytProbe && selectedYtFormat) {
+        if (selectedYtFormat.needsMux && !ytProbe.ffmpegAvailable) {
+          setError(
+            "This HD quality requires ffmpeg to merge video & audio. Install ffmpeg or pick a Direct / Audio Only option."
+          );
+          setSubmitting(false);
+          return;
+        }
+        const task = await addDownload({
+          url: selectedYtFormat.videoUrl,
+          saveDir: saveDir.trim() || undefined,
+          fileName: fileName.trim() || buildYouTubeFileName(ytProbe.title, selectedYtFormat),
+          maxConnections,
+          headers: selectedYtFormat.httpHeaders,
+          companionAudioUrl: selectedYtFormat.audioUrl ?? undefined,
+          sourcePageUrl: ytProbe.url,
+          mediaFormatId: selectedYtFormat.id,
+          mediaThumbnail: ytProbe.thumbnail ?? undefined,
+          mediaQualityLabel: selectedYtFormat.label,
+        });
+        onCreated(task);
+        onClose();
+      } else {
+        const task = await addDownload({
+          url: trimmed,
+          saveDir: saveDir.trim() || undefined,
+          fileName: fileName.trim() || undefined,
+          maxConnections,
+        });
+        onCreated(task);
+        onClose();
+      }
     } catch (err) {
       setError(String(err));
     } finally {
@@ -103,7 +232,7 @@ export function AddDownloadModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4">
       <div
-        className="w-full max-w-xl rounded-[28px] p-6"
+        className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-[28px] p-6"
         style={{
           backgroundColor: "var(--md-surface-container-high)",
           boxShadow: "var(--md-shadow-3)",
@@ -124,7 +253,7 @@ export function AddDownloadModal({
             <div>
               <h2 className="text-lg font-medium tracking-tight">New Download</h2>
               <p className="text-xs" style={{ color: "var(--md-on-surface-variant)" }}>
-                Dynamic multi-segment acceleration
+                Direct links & YouTube videos with dynamic multi-segment speed
               </p>
             </div>
           </div>
@@ -133,14 +262,14 @@ export function AddDownloadModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+        <form onSubmit={handleSubmit} className="mt-5 flex-1 space-y-4 overflow-y-auto pr-1">
           {/* URL Input */}
           <div>
             <label
               className="mb-1.5 block text-xs font-medium"
               style={{ color: "var(--md-on-surface-variant)" }}
             >
-              Download URL
+              Download or YouTube URL
             </label>
             <div className="flex gap-2.5">
               <div className="relative flex-1">
@@ -155,19 +284,19 @@ export function AddDownloadModal({
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   onBlur={() => {
-                    if (url.trim().startsWith("http") && !probe) {
-                      void handleProbe();
+                    if (url.trim().startsWith("http") && !probe && !ytProbe && !probing) {
+                      void runProbe(url);
                     }
                   }}
-                  placeholder="https://example.com/large-file.iso"
+                  placeholder="https://youtube.com/watch?v=... or direct file URL"
                   className="md-input w-full rounded-xl py-2.5 pl-10 pr-3.5 text-sm"
                 />
               </div>
               <button
                 type="button"
-                onClick={handleProbe}
+                onClick={() => void runProbe(url)}
                 disabled={probing || !url.trim()}
-                className="md-btn-tonal flex items-center gap-1.5 rounded-full px-4 text-xs font-medium"
+                className="md-btn-tonal flex items-center gap-1.5 rounded-full px-4 text-xs font-medium cursor-pointer"
               >
                 {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                 Probe
@@ -175,8 +304,108 @@ export function AddDownloadModal({
             </div>
           </div>
 
-          {/* Probe Result Card */}
-          {probe && (
+          {probingYouTube && (
+            <div
+              className="flex items-center gap-3 rounded-2xl px-4 py-3 text-xs"
+              style={{ backgroundColor: "var(--md-surface-container)" }}
+            >
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" style={{ color: "var(--md-primary)" }} />
+              <span style={{ color: "var(--md-on-surface-variant)" }}>
+                Extracting YouTube video qualities (auto-installing yt-dlp on first run if needed)…
+              </span>
+            </div>
+          )}
+
+          {/* YouTube Video Preview & Quality Picker */}
+          {ytProbe && (
+            <div
+              className="space-y-3 rounded-2xl p-3.5"
+              style={{ backgroundColor: "var(--md-surface-container)" }}
+            >
+              <div className="flex gap-3">
+                {ytProbe.thumbnail && (
+                  <img
+                    src={ytProbe.thumbnail}
+                    alt={ytProbe.title}
+                    className="h-18 w-32 shrink-0 rounded-xl object-cover"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="line-clamp-2 text-sm font-medium leading-snug">
+                    {ytProbe.title}
+                  </div>
+                  <div
+                    className="mt-1 flex flex-wrap items-center gap-2 text-[11px]"
+                    style={{ color: "var(--md-on-surface-variant)" }}
+                  >
+                    {ytProbe.uploader && <span>{ytProbe.uploader}</span>}
+                    {ytProbe.durationSeconds ? (
+                      <>
+                        <span>·</span>
+                        <span className="font-mono">{formatDuration(ytProbe.durationSeconds)}</span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div
+                  className="mb-1.5 text-[11px] font-medium"
+                  style={{ color: "var(--md-on-surface-variant)" }}
+                >
+                  Select Quality
+                </div>
+                <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                  {ytProbe.formats.map((fmt) => {
+                    const active = fmt.id === selectedFormatId;
+                    const disabled = fmt.needsMux && !ytProbe.ffmpegAvailable;
+                    return (
+                      <button
+                        key={fmt.id}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => {
+                          setSelectedFormatId(fmt.id);
+                          setFileName(buildYouTubeFileName(ytProbe.title, fmt));
+                        }}
+                        className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
+                        style={{
+                          backgroundColor: active
+                            ? "var(--md-primary-container)"
+                            : "var(--md-surface-container-low)",
+                          color: active
+                            ? "var(--md-on-primary-container)"
+                            : "var(--md-on-surface)",
+                        }}
+                      >
+                        <span className="flex items-center gap-2 font-medium">
+                          {fmt.isAudioOnly ? (
+                            <Music className="h-3.5 w-3.5" />
+                          ) : (
+                            <Film className="h-3.5 w-3.5" />
+                          )}
+                          <span>{fmt.label}</span>
+                          {disabled && (
+                            <span className="text-[10px] opacity-80">(requires ffmpeg)</span>
+                          )}
+                        </span>
+                        <span className="flex items-center gap-2 tabular-nums">
+                          <span className="text-[11px] opacity-80">
+                            {fmt.approxSizeBytes ? `~${formatBytes(fmt.approxSizeBytes)}` : "—"}
+                          </span>
+                          {active && <Check className="h-3.5 w-3.5" />}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Direct File Probe Result Card */}
+          {probe && !ytProbe && (
             <div
               className="flex flex-wrap items-center justify-between gap-2 rounded-2xl px-4 py-3 text-xs"
               style={{ backgroundColor: "var(--md-surface-container)" }}
@@ -291,7 +520,7 @@ export function AddDownloadModal({
               <button
                 type="button"
                 onClick={handleBrowse}
-                className="md-btn-outlined flex items-center gap-1.5 rounded-full px-4 text-xs font-medium"
+                className="md-btn-outlined flex items-center gap-1.5 rounded-full px-4 text-xs font-medium cursor-pointer"
               >
                 <FolderOpen className="h-4 w-4" />
                 Browse
@@ -316,22 +545,22 @@ export function AddDownloadModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full px-5 py-2.5 text-xs font-medium transition-colors hover:bg-white/5"
+              className="rounded-full px-5 py-2.5 text-xs font-medium transition-colors hover:bg-white/5 cursor-pointer"
               style={{ color: "var(--md-primary)" }}
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={submitting || !url.trim()}
-              className="md-btn-filled flex items-center gap-2 rounded-full px-6 py-2.5 text-xs font-semibold"
+              disabled={submitting || probing || !url.trim()}
+              className="md-btn-filled flex items-center gap-2 rounded-full px-6 py-2.5 text-xs font-semibold cursor-pointer"
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Zap className="h-4 w-4" />
               )}
-              Start Download
+              {ytProbe ? "Download Video" : "Start Download"}
             </button>
           </div>
         </form>

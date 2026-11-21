@@ -168,4 +168,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .catch((err) => sendResponse({ ok: false, error: err.message }));
     return true;
   }
+  if (msg.type === "openYouTube") {
+    getConfig()
+      .then(async (cfg) => {
+        const resp = await fetch(`http://127.0.0.1:${cfg.port}/api/youtube/open`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: msg.url }),
+        });
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        return resp.json();
+      })
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
 });

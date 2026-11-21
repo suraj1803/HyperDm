@@ -181,6 +181,20 @@
   cursor: not-allowed;
 }
 
+.md-download-row {
+  background-color: var(--md-surface-container);
+  border: 1px solid transparent;
+  transition: background-color 140ms ease, border-color 140ms ease, transform 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+.md-download-row:hover {
+  background-color: var(--md-surface-container-highest);
+}
+.md-download-row[data-activated="true"] {
+  background-color: var(--md-primary-container);
+  border-color: var(--md-primary);
+  transform: scale(0.992);
+}
+
 .md-input {
   background-color: var(--md-surface-container-lowest);
   border: 1px solid var(--md-outline-variant);

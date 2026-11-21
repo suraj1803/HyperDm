@@ -23,6 +23,8 @@ pub enum DownloadError {
     Serde(#[from] serde_json::Error),
     #[error("Download cancelled")]
     Cancelled,
+    #[error("YouTube / media tool error: {0}")]
+    MediaTool(String),
 }
 
 impl Serialize for DownloadError {
@@ -40,6 +42,7 @@ pub enum DownloadStatus {
     Queued,
     Probing,
     Downloading,
+    Muxing,
     Paused,
     Completed,
     Error,
@@ -104,6 +107,16 @@ pub struct DownloadTaskInfo {
     pub last_modified: Option<String>,
     #[serde(default)]
     pub request_headers: HashMap<String, String>,
+    #[serde(default)]
+    pub companion_audio_url: Option<String>,
+    #[serde(default)]
+    pub source_page_url: Option<String>,
+    #[serde(default)]
+    pub media_format_id: Option<String>,
+    #[serde(default)]
+    pub media_thumbnail: Option<String>,
+    #[serde(default)]
+    pub media_quality_label: Option<String>,
     pub segments: Vec<SegmentSnapshot>,
     pub dynamic_splits: u32,
     pub created_at: DateTime<Utc>,
@@ -166,4 +179,51 @@ pub struct AddDownloadRequest {
     pub max_connections: Option<u32>,
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    #[serde(default)]
+    pub companion_audio_url: Option<String>,
+    #[serde(default)]
+    pub source_page_url: Option<String>,
+    #[serde(default)]
+    pub media_format_id: Option<String>,
+    #[serde(default)]
+    pub media_thumbnail: Option<String>,
+    #[serde(default)]
+    pub media_quality_label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YouTubeFormatOption {
+    pub id: String,
+    pub label: String,
+    pub ext: String,
+    pub height: Option<u32>,
+    pub fps: Option<u32>,
+    pub is_audio_only: bool,
+    pub needs_mux: bool,
+    pub approx_size_bytes: Option<u64>,
+    pub video_url: String,
+    pub audio_url: Option<String>,
+    pub http_headers: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YouTubeProbeResult {
+    pub url: String,
+    pub title: String,
+    pub uploader: Option<String>,
+    pub duration_seconds: Option<u64>,
+    pub thumbnail: Option<String>,
+    pub ffmpeg_available: bool,
+    pub formats: Vec<YouTubeFormatOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaToolsStatus {
+    pub ytdlp_installed: bool,
+    pub ytdlp_path: Option<String>,
+    pub ffmpeg_installed: bool,
+    pub ffmpeg_path: Option<String>,
 }

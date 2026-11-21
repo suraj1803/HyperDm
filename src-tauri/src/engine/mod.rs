@@ -6,6 +6,7 @@ pub mod persistence;
 pub mod prober;
 pub mod segment;
 pub mod worker;
+pub mod youtube;
 
 #[cfg(test)]
 mod tests;

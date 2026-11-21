@@ -9,12 +9,18 @@ use reqwest::Client;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::engine::coordinator::{part_file_path, run_download_coordinator, ProgressCallback};
+use crate::engine::coordinator::{
+    audio_part_file_path, part_file_path, run_download_coordinator, ProgressCallback,
+};
 use crate::engine::models::{
-    AddDownloadRequest, AppSettings, DownloadError, DownloadStatus, DownloadTaskInfo, ProbeResult,
+    AddDownloadRequest, AppSettings, DownloadError, DownloadStatus, DownloadTaskInfo,
+    MediaToolsStatus, ProbeResult, YouTubeProbeResult,
 };
 use crate::engine::persistence::StateStore;
 use crate::engine::prober::{build_http_client, probe_url, sanitize_filename};
+use crate::engine::youtube::{
+    install_or_update_ffmpeg, install_or_update_ytdlp, media_tools_status, probe_youtube,
+};
 
 struct ActiveRun {
     run_id: Uuid,
@@ -33,6 +39,7 @@ struct InnerState {
 #[derive(Clone)]
 pub struct DownloadManager {
     client: Client,
+    data_dir: PathBuf,
     store: StateStore,
     state: Arc<RwLock<InnerState>>,
     emitter: ProgressCallback,
@@ -52,6 +59,7 @@ impl DownloadManager {
 
         Ok(Self {
             client,
+            data_dir: data_dir.to_path_buf(),
             store,
             state: Arc::new(RwLock::new(InnerState {
                 tasks,
@@ -66,6 +74,24 @@ impl DownloadManager {
 
     pub async fn probe(&self, url: &str) -> Result<ProbeResult, DownloadError> {
         probe_url(&self.client, url, &HashMap::new()).await
+    }
+
+    pub async fn probe_youtube(&self, url: &str) -> Result<YouTubeProbeResult, DownloadError> {
+        probe_youtube(&self.client, &self.data_dir, url).await
+    }
+
+    pub fn media_tools_status(&self) -> MediaToolsStatus {
+        media_tools_status(&self.data_dir)
+    }
+
+    pub async fn install_ytdlp(&self) -> Result<MediaToolsStatus, DownloadError> {
+        install_or_update_ytdlp(&self.client, &self.data_dir).await?;
+        Ok(media_tools_status(&self.data_dir))
+    }
+
+    pub async fn install_ffmpeg(&self) -> Result<MediaToolsStatus, DownloadError> {
+        install_or_update_ffmpeg(&self.client, &self.data_dir).await?;
+        Ok(media_tools_status(&self.data_dir))
     }
 
     pub fn list_downloads(&self) -> Vec<DownloadTaskInfo> {
@@ -138,6 +164,11 @@ impl DownloadManager {
             etag: probe.etag,
             last_modified: probe.last_modified,
             request_headers: req.headers,
+            companion_audio_url: req.companion_audio_url,
+            source_page_url: req.source_page_url,
+            media_format_id: req.media_format_id,
+            media_thumbnail: req.media_thumbnail,
+            media_quality_label: req.media_quality_label,
             segments: Vec::new(),
             dynamic_splits: 0,
             created_at: Utc::now(),
@@ -187,6 +218,7 @@ impl DownloadManager {
 
         self.persist_now();
         (self.emitter)(updated.clone());
+        self.schedule_next_queued();
         Ok(updated)
     }
 
@@ -216,10 +248,49 @@ impl DownloadManager {
             let _ = rx.wait_for(|&done| done).await;
         }
 
-        // Re-check status in case the previous run finished downloading right as pause was clicked
+        // Re-check status & refresh expired YouTube signed URLs if needed
         if let Some(task) = self.get_download(id) {
             if task.status == DownloadStatus::Completed {
                 return Ok(task);
+            }
+            let age_hours = Utc::now()
+                .signed_duration_since(task.created_at)
+                .num_hours();
+            let looks_expired = task
+                .error_message
+                .as_deref()
+                .map(|m| m.contains("403") || m.contains("410"))
+                .unwrap_or(false)
+                || age_hours >= 5;
+
+            if looks_expired {
+                if let Some(ref page_url) = task.source_page_url {
+                    if let Ok(yt) = self.probe_youtube(page_url).await {
+                        let matched = task
+                            .media_format_id
+                            .as_deref()
+                            .and_then(|fid| yt.formats.iter().find(|f| f.id == fid))
+                            .or_else(|| {
+                                task.media_quality_label
+                                    .as_deref()
+                                    .and_then(|lbl| yt.formats.iter().find(|f| f.label == lbl))
+                            })
+                            .or_else(|| yt.formats.first());
+
+                        if let Some(fmt) = matched {
+                            let mut guard = self.state.write().unwrap();
+                            if let Some(t) = guard.tasks.get_mut(&id) {
+                                t.url = fmt.video_url.clone();
+                                t.final_url = fmt.video_url.clone();
+                                t.companion_audio_url = fmt.audio_url.clone();
+                                t.request_headers = fmt.http_headers.clone();
+                                t.created_at = Utc::now();
+                            }
+                            drop(guard);
+                            self.persist_now();
+                        }
+                    }
+                }
             }
         }
 
@@ -280,12 +351,14 @@ impl DownloadManager {
             t.cancel();
         }
 
-        let part = part_file_path(Path::new(&full_path));
-        let _ = fs::remove_file(part);
+        let full = Path::new(&full_path);
+        let _ = fs::remove_file(part_file_path(full));
+        let _ = fs::remove_file(audio_part_file_path(full));
 
         self.persist_now();
         let updated = self.get_download(id).ok_or(DownloadError::NotFound(id))?;
         (self.emitter)(updated.clone());
+        self.schedule_next_queued();
         Ok(updated)
     }
 
@@ -305,19 +378,67 @@ impl DownloadManager {
         if let Some(task) = task {
             let full = Path::new(&task.full_path);
             let _ = fs::remove_file(part_file_path(full));
+            let _ = fs::remove_file(audio_part_file_path(full));
             if delete_file {
                 let _ = fs::remove_file(full);
             }
         }
 
         self.persist_now();
+        self.schedule_next_queued();
         Ok(())
+    }
+
+    fn schedule_next_queued(&self) {
+        let next_ids: Vec<Uuid> = {
+            let guard = self.state.read().unwrap();
+            let active_count = guard
+                .active_runs
+                .values()
+                .filter(|r| !r.token.is_cancelled())
+                .count();
+            let max_concurrent = guard.settings.max_concurrent_downloads.max(1) as usize;
+            if active_count >= max_concurrent {
+                return;
+            }
+            let slots = max_concurrent - active_count;
+            let mut queued: Vec<&DownloadTaskInfo> = guard
+                .tasks
+                .values()
+                .filter(|t| {
+                    t.status == DownloadStatus::Queued && !guard.active_runs.contains_key(&t.id)
+                })
+                .collect();
+            queued.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+            queued.into_iter().take(slots).map(|t| t.id).collect()
+        };
+
+        for qid in next_ids {
+            let _ = self.spawn_task(qid);
+        }
     }
 
     fn spawn_task(&self, id: Uuid) -> Result<(), DownloadError> {
         let (task, min_split_size, token, run_id, done_tx) = {
             let mut guard = self.state.write().unwrap();
             if guard.active_runs.contains_key(&id) {
+                return Ok(());
+            }
+            let active_count = guard
+                .active_runs
+                .values()
+                .filter(|r| !r.token.is_cancelled())
+                .count();
+            let max_concurrent = guard.settings.max_concurrent_downloads.max(1) as usize;
+            if active_count >= max_concurrent {
+                if let Some(task) = guard.tasks.get_mut(&id) {
+                    task.status = DownloadStatus::Queued;
+                    task.error_message = None;
+                    let queued_clone = task.clone();
+                    drop(guard);
+                    self.persist_now();
+                    (self.emitter)(queued_clone);
+                }
                 return Ok(());
             }
             let min_split = guard.settings.min_split_size_bytes;
@@ -367,8 +488,15 @@ impl DownloadManager {
                 (progress_mgr.emitter)(updated);
             });
 
-            let mut final_task =
-                run_download_coordinator(client, task, min_split_size, token, on_progress).await;
+            let mut final_task = run_download_coordinator(
+                client,
+                manager.data_dir.clone(),
+                task,
+                min_split_size,
+                token,
+                on_progress,
+            )
+            .await;
 
             {
                 let mut guard = manager.state.write().unwrap();
@@ -393,6 +521,7 @@ impl DownloadManager {
             manager.persist_now();
             (manager.emitter)(final_task);
             let _ = done_tx.send(true);
+            manager.schedule_next_queued();
         });
 
         Ok(())
