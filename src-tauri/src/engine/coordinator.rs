@@ -55,6 +55,26 @@ pub async fn run_download_coordinator(
     task.status = DownloadStatus::Downloading;
     task.error_message = None;
 
+    // If this is an adaptive YouTube download, start downloading the companion audio track
+    // in parallel with the video so merging is nearly instantaneous once video completes.
+    let audio_handle: Option<tokio::task::JoinHandle<Result<(), DownloadError>>> =
+        task.companion_audio_url.clone().map(|audio_url| {
+            let audio_client = client.clone();
+            let audio_headers = task.request_headers.clone();
+            let audio_dest = audio_part_file_path(&final_path);
+            let audio_cancel = cancel.clone();
+            tokio::spawn(async move {
+                download_companion_audio(
+                    &audio_client,
+                    &audio_url,
+                    &audio_headers,
+                    &audio_dest,
+                    &audio_cancel,
+                )
+                .await
+            })
+        });
+
     // Decide between dynamic multi-segment mode and single-stream fallback
     let use_range = task.supports_range && task.total_size.unwrap_or(0) > 0;
 
@@ -65,6 +85,7 @@ pub async fn run_download_coordinator(
             task,
             part_path,
             final_path,
+            audio_handle,
             cancel,
             on_progress,
         )
@@ -126,6 +147,7 @@ pub async fn run_download_coordinator(
             &segments,
             &part_path,
             &final_path,
+            audio_handle,
             &cancel,
             on_progress,
         )
@@ -218,10 +240,14 @@ pub async fn run_download_coordinator(
                 &segments,
                 &part_path,
                 &final_path,
+                audio_handle,
                 &cancel,
                 on_progress,
             )
             .await;
+        }
+        if let Some(h) = audio_handle {
+            let _ = h.await;
         }
         task.status = DownloadStatus::Paused;
         on_progress(task.clone());
@@ -237,6 +263,7 @@ pub async fn run_download_coordinator(
             &segments,
             &part_path,
             &final_path,
+            audio_handle,
             &cancel,
             on_progress,
         )
@@ -280,6 +307,7 @@ async fn run_single_stream_download(
     mut task: DownloadTaskInfo,
     part_path: PathBuf,
     final_path: PathBuf,
+    audio_handle: Option<tokio::task::JoinHandle<Result<(), DownloadError>>>,
     cancel: CancellationToken,
     on_progress: ProgressCallback,
 ) -> DownloadTaskInfo {
@@ -339,6 +367,7 @@ async fn run_single_stream_download(
                 &segments,
                 &part_path,
                 &final_path,
+                audio_handle,
                 &cancel,
                 on_progress,
             )
@@ -588,6 +617,7 @@ async fn finalize_download(
     segments: &[Arc<LiveSegment>],
     part_path: &Path,
     final_path: &Path,
+    audio_handle: Option<tokio::task::JoinHandle<Result<(), DownloadError>>>,
     cancel: &CancellationToken,
     on_progress: ProgressCallback,
 ) -> DownloadTaskInfo {
@@ -598,9 +628,18 @@ async fn finalize_download(
         on_progress(task.clone());
 
         let audio_part = audio_part_file_path(final_path);
-        match download_companion_audio(client, &audio_url, &task.request_headers, &audio_part, cancel)
-            .await
-        {
+        let audio_res = match audio_handle {
+            Some(handle) => match handle.await {
+                Ok(res) => res,
+                Err(e) => Err(DownloadError::MediaTool(format!("Audio task panicked: {}", e))),
+            },
+            None => {
+                download_companion_audio(client, &audio_url, &task.request_headers, &audio_part, cancel)
+                    .await
+            }
+        };
+
+        match audio_res {
             Ok(()) => {}
             Err(DownloadError::Cancelled) => {
                 let _ = fs::remove_file(&audio_part);

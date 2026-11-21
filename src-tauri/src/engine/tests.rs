@@ -198,6 +198,8 @@ async fn test_dynamic_segmentation_work_stealing_and_integrity() {
             max_connections: Some(4),
             headers: Default::default(),
             companion_audio_url: None,
+            source_page_url: None,
+            media_format_id: None,
             media_thumbnail: None,
             media_quality_label: None,
         })
@@ -247,6 +249,8 @@ async fn test_pause_persist_and_resume_integrity() {
                 max_connections: Some(4),
                 headers: Default::default(),
             companion_audio_url: None,
+            source_page_url: None,
+            media_format_id: None,
             media_thumbnail: None,
             media_quality_label: None,
             })
@@ -302,6 +306,8 @@ async fn test_rapid_pause_and_immediate_resume() {
             max_connections: Some(4),
             headers: Default::default(),
             companion_audio_url: None,
+            source_page_url: None,
+            media_format_id: None,
             media_thumbnail: None,
             media_quality_label: None,
         })
@@ -345,6 +351,8 @@ async fn test_non_range_server_single_stream_fallback() {
             max_connections: Some(8),
             headers: Default::default(),
             companion_audio_url: None,
+            source_page_url: None,
+            media_format_id: None,
             media_thumbnail: None,
             media_quality_label: None,
         })
@@ -384,6 +392,8 @@ async fn test_mid_stream_drop_retry_recovery() {
             max_connections: Some(4),
             headers: Default::default(),
             companion_audio_url: None,
+            source_page_url: None,
+            media_format_id: None,
             media_thumbnail: None,
             media_quality_label: None,
         })
@@ -489,15 +499,100 @@ async fn test_browser_bridge_health_and_download_handoff() {
     let yt_resp = client
         .post(format!("http://{}/api/youtube/open", bridge_addr))
         .header("Content-Type", "application/json")
+        .header("Origin", "chrome-extension://hyperdmtest")
         .body(r#"{"url":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}"#)
         .send()
         .await
         .unwrap();
     assert_eq!(yt_resp.status().as_u16(), 200);
     assert_eq!(
+        yt_resp
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|v| v.to_str().ok()),
+        Some("chrome-extension://hyperdmtest")
+    );
+    assert_eq!(
         yt_opened.lock().unwrap().as_deref(),
         Some("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
     );
+
+    // 4. Reject arbitrary website Origins with 403 Forbidden
+    let evil_resp = client
+        .get(format!("http://{}/health", bridge_addr))
+        .header("Origin", "https://evil.example.com")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(evil_resp.status().as_u16(), 403);
+}
+
+#[tokio::test]
+async fn test_max_concurrent_downloads_queue_enforcement() {
+    let payload = Arc::new(deterministic_payload(2 * 1024 * 1024)); // 2 MiB
+    let expected_hash = sha256_hex(&payload);
+
+    let url = start_test_server(ServerConfig {
+        payload: Arc::clone(&payload),
+        supports_range: true,
+        slow_first_segment: true,
+        drop_once: Arc::new(AtomicBool::new(false)),
+    })
+    .await;
+
+    let tmp = TempDir::new().unwrap();
+    let mgr = DownloadManager::new(&tmp.path().join("data"), Arc::new(|_| {})).unwrap();
+    let mut settings = mgr.get_settings();
+    settings.max_concurrent_downloads = 1;
+    mgr.update_settings(settings).unwrap();
+
+    let save_dir = tmp.path().join("queued_dl").to_string_lossy().to_string();
+
+    let t1 = mgr
+        .add_download(AddDownloadRequest {
+            url: url.clone(),
+            save_dir: Some(save_dir.clone()),
+            file_name: Some("first.bin".to_string()),
+            max_connections: Some(2),
+            headers: Default::default(),
+            companion_audio_url: None,
+            source_page_url: None,
+            media_format_id: None,
+            media_thumbnail: None,
+            media_quality_label: None,
+        })
+        .await
+        .unwrap();
+
+    let t2 = mgr
+        .add_download(AddDownloadRequest {
+            url,
+            save_dir: Some(save_dir),
+            file_name: Some("second.bin".to_string()),
+            max_connections: Some(2),
+            headers: Default::default(),
+            companion_audio_url: None,
+            source_page_url: None,
+            media_format_id: None,
+            media_thumbnail: None,
+            media_quality_label: None,
+        })
+        .await
+        .unwrap();
+
+    // Second task should start as Queued while first is active (unless first already finished)
+    assert!(matches!(
+        t2.status,
+        DownloadStatus::Queued | DownloadStatus::Downloading | DownloadStatus::Completed
+    ));
+
+    assert_eq!(wait_for_terminal(&mgr, t1.id).await, DownloadStatus::Completed);
+    assert_eq!(wait_for_terminal(&mgr, t2.id).await, DownloadStatus::Completed);
+
+    let b1 = std::fs::read(mgr.get_download(t1.id).unwrap().full_path).unwrap();
+    let b2 = std::fs::read(mgr.get_download(t2.id).unwrap().full_path).unwrap();
+    assert_eq!(sha256_hex(&b1), expected_hash);
+    assert_eq!(sha256_hex(&b2), expected_hash);
 }
 
 #[test]
@@ -715,6 +810,8 @@ async fn test_adaptive_video_audio_download_and_ffmpeg_mux() {
             max_connections: Some(4),
             headers: Default::default(),
             companion_audio_url: Some(audio_url),
+            source_page_url: None,
+            media_format_id: None,
             media_thumbnail: None,
             media_quality_label: Some("1080p Full HD (MP4)".to_string()),
         })

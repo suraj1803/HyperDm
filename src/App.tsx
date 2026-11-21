@@ -132,6 +132,8 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activatedId, setActivatedId] = useState<string | null>(null);
   const [inspectId, setInspectId] = useState<string | null>(null);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState<DownloadTaskInfo | null>(null);
+  const [deleteFromDisk, setDeleteFromDisk] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [pendingYouTubeUrl, setPendingYouTubeUrl] = useState<string | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -241,8 +243,8 @@ export function App() {
     [tasks]
   );
 
-  async function handleRemove(id: string) {
-    await removeDownload(id, false);
+  async function handleRemove(id: string, alsoDeleteFile: boolean) {
+    await removeDownload(id, alsoDeleteFile);
     setTasks((prev) => prev.filter((t) => t.id !== id));
     if (inspectId === id) setInspectId(null);
   }
@@ -559,6 +561,18 @@ export function App() {
                                 <span>{formatEta(task.etaSeconds)} left</span>
                               </>
                             )}
+                            {task.status === "error" && task.errorMessage && (
+                              <>
+                                <span>·</span>
+                                <span
+                                  className="truncate max-w-[320px]"
+                                  style={{ color: "var(--md-error)" }}
+                                  title={task.errorMessage}
+                                >
+                                  {task.errorMessage}
+                                </span>
+                              </>
+                            )}
                           </div>
 
                           <button
@@ -624,7 +638,10 @@ export function App() {
                         ) : null}
 
                         <button
-                          onClick={() => void handleRemove(task.id)}
+                          onClick={() => {
+                            setDeleteFromDisk(false);
+                            setConfirmDeleteTask(task);
+                          }}
                           className="md-icon-btn p-2 cursor-pointer"
                           title="Remove"
                         >
@@ -666,6 +683,69 @@ export function App() {
         onClose={() => setShowSettingsModal(false)}
         onSaved={(updated) => setSettings(updated)}
       />
+
+      {/* Material 3 Delete Confirmation Dialog */}
+      {confirmDeleteTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4">
+          <div
+            className="w-full max-w-md rounded-[28px] p-6"
+            style={{
+              backgroundColor: "var(--md-surface-container-high)",
+              boxShadow: "var(--md-shadow-3)",
+            }}
+          >
+            <h3 className="text-base font-medium">Remove download?</h3>
+            <p
+              className="mt-2 break-all text-xs leading-relaxed"
+              style={{ color: "var(--md-on-surface-variant)" }}
+            >
+              {confirmDeleteTask.fileName}
+            </p>
+
+            {confirmDeleteTask.status === "completed" && (
+              <label
+                className="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl px-3.5 py-3 text-xs"
+                style={{ backgroundColor: "var(--md-surface-container)" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={deleteFromDisk}
+                  onChange={(e) => setDeleteFromDisk(e.target.checked)}
+                  className="h-4 w-4 accent-rose-500"
+                />
+                <span>Also delete the downloaded file from disk</span>
+              </label>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteTask(null)}
+                className="rounded-full px-5 py-2 text-xs font-medium cursor-pointer"
+                style={{ color: "var(--md-primary)" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = confirmDeleteTask;
+                  const fromDisk = deleteFromDisk;
+                  setConfirmDeleteTask(null);
+                  void handleRemove(target.id, fromDisk);
+                }}
+                className="rounded-full px-5 py-2 text-xs font-semibold cursor-pointer"
+                style={{
+                  backgroundColor: "var(--md-error-container)",
+                  color: "var(--md-on-error-container)",
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

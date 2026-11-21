@@ -80,6 +80,8 @@ export interface AddDownloadRequest {
   maxConnections?: number;
   headers?: Record<string, string>;
   companionAudioUrl?: string;
+  sourcePageUrl?: string;
+  mediaFormatId?: string;
   mediaThumbnail?: string;
   mediaQualityLabel?: string;
 }

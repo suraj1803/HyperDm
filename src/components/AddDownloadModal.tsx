@@ -205,6 +205,8 @@ export function AddDownloadModal({
           maxConnections,
           headers: selectedYtFormat.httpHeaders,
           companionAudioUrl: selectedYtFormat.audioUrl ?? undefined,
+          sourcePageUrl: ytProbe.url,
+          mediaFormatId: selectedYtFormat.id,
           mediaThumbnail: ytProbe.thumbnail ?? undefined,
           mediaQualityLabel: selectedYtFormat.label,
         });

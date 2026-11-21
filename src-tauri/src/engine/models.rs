@@ -110,6 +110,10 @@ pub struct DownloadTaskInfo {
     #[serde(default)]
     pub companion_audio_url: Option<String>,
     #[serde(default)]
+    pub source_page_url: Option<String>,
+    #[serde(default)]
+    pub media_format_id: Option<String>,
+    #[serde(default)]
     pub media_thumbnail: Option<String>,
     #[serde(default)]
     pub media_quality_label: Option<String>,
@@ -177,6 +181,10 @@ pub struct AddDownloadRequest {
     pub headers: HashMap<String, String>,
     #[serde(default)]
     pub companion_audio_url: Option<String>,
+    #[serde(default)]
+    pub source_page_url: Option<String>,
+    #[serde(default)]
+    pub media_format_id: Option<String>,
     #[serde(default)]
     pub media_thumbnail: Option<String>,
     #[serde(default)]
