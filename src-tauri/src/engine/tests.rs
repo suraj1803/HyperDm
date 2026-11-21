@@ -582,6 +582,62 @@ fn test_youtube_url_detection_and_format_selection() {
     assert!(parsed.formats[3].is_audio_only);
 }
 
+#[test]
+fn test_youtube_multi_language_prefers_original_audio_over_dubbed() {
+    let fixture = r#"{
+        "title": "Multi-Audio Dubbed Video",
+        "language": "en",
+        "formats": [
+            {
+                "format_id": "140-0",
+                "format_note": "medium, English (original)",
+                "ext": "m4a",
+                "url": "https://cdn.example.com/audio_en_original.m4a",
+                "protocol": "https",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "language": "en",
+                "language_preference": 10,
+                "abr": 128.0
+            },
+            {
+                "format_id": "140-1",
+                "format_note": "medium, Japanese (dubbed)",
+                "ext": "m4a",
+                "url": "https://cdn.example.com/audio_ja_dubbed.m4a",
+                "protocol": "https",
+                "vcodec": "none",
+                "acodec": "mp4a.40.2",
+                "language": "ja",
+                "language_preference": -10,
+                "abr": 131.5
+            },
+            {
+                "format_id": "137",
+                "ext": "mp4",
+                "url": "https://cdn.example.com/video_1080.mp4",
+                "protocol": "https",
+                "vcodec": "avc1.640028",
+                "acodec": "none",
+                "height": 1080,
+                "fps": 30.0,
+                "tbr": 3500.0
+            }
+        ]
+    }"#;
+
+    let parsed = parse_ytdlp_json("https://youtu.be/dQw4w9WgXcQ", fixture, true).unwrap();
+    assert_eq!(
+        parsed.formats[0].audio_url.as_deref(),
+        Some("https://cdn.example.com/audio_en_original.m4a")
+    );
+    let audio_only = parsed.formats.iter().find(|f| f.is_audio_only).unwrap();
+    assert_eq!(
+        audio_only.video_url,
+        "https://cdn.example.com/audio_en_original.m4a"
+    );
+}
+
 #[tokio::test]
 async fn test_adaptive_video_audio_download_and_ffmpeg_mux() {
     let tmp = TempDir::new().unwrap();

@@ -232,6 +232,7 @@ struct RawYtDlpJson {
     channel: Option<String>,
     duration: Option<f64>,
     thumbnail: Option<String>,
+    language: Option<String>,
     #[serde(default)]
     formats: Vec<RawYtDlpFormat>,
 }
@@ -239,11 +240,14 @@ struct RawYtDlpJson {
 #[derive(Debug, Deserialize)]
 struct RawYtDlpFormat {
     format_id: Option<String>,
+    format_note: Option<String>,
     ext: Option<String>,
     url: Option<String>,
     protocol: Option<String>,
     vcodec: Option<String>,
     acodec: Option<String>,
+    language: Option<String>,
+    language_preference: Option<i32>,
     height: Option<u32>,
     fps: Option<f64>,
     tbr: Option<f64>,
@@ -328,20 +332,33 @@ pub fn parse_ytdlp_json(
         })
         .collect();
 
-    // Find best M4A audio stream (ideal for lossless MP4 muxing) and best overall audio stream
+    let video_lang = raw.language.as_deref();
+
+    // Find best M4A audio stream (preferring original/default language over dubbed tracks)
     let best_m4a_audio = direct_formats
         .iter()
         .filter(|f| is_audio_only(f) && f.ext.as_deref() == Some("m4a"))
-        .max_by(|a, b| audio_score(a).total_cmp(&audio_score(b)))
+        .max_by(|a, b| audio_score(a, video_lang).total_cmp(&audio_score(b, video_lang)))
         .copied();
 
     let best_any_audio = direct_formats
         .iter()
         .filter(|f| is_audio_only(f))
-        .max_by(|a, b| audio_score(a).total_cmp(&audio_score(b)))
+        .max_by(|a, b| audio_score(a, video_lang).total_cmp(&audio_score(b, video_lang)))
         .copied();
 
-    let paired_audio = best_m4a_audio.or(best_any_audio);
+    let paired_audio = match (best_m4a_audio, best_any_audio) {
+        (Some(m4a), Some(any)) => {
+            // Only prefer M4A over another codec if they are in the same language tier
+            if audio_score(any, video_lang) - audio_score(m4a, video_lang) > 5_000.0 {
+                Some(any)
+            } else {
+                Some(m4a)
+            }
+        }
+        (Some(m4a), None) => Some(m4a),
+        (None, any) => any,
+    };
 
     // Best video-only stream per resolution height (prefer MP4/H.264/AV1 for broad compatibility)
     let mut best_video_by_height: BTreeMap<u32, &RawYtDlpFormat> = BTreeMap::new();
@@ -492,9 +509,55 @@ fn is_progressive(f: &RawYtDlpFormat) -> bool {
     v != "none" && a != "none"
 }
 
-fn audio_score(f: &RawYtDlpFormat) -> f64 {
-    let ext_bonus = if f.ext.as_deref() == Some("m4a") { 100.0 } else { 0.0 };
-    ext_bonus + f.abr.or(f.tbr).unwrap_or(0.0)
+fn normalize_lang(lang: &str) -> String {
+    lang.trim()
+        .to_ascii_lowercase()
+        .split(['-', '_'])
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
+fn audio_score(f: &RawYtDlpFormat, video_lang: Option<&str>) -> f64 {
+    let mut score = 0.0;
+
+    // 1. yt-dlp's explicit language_preference (+10 for original/default, -10 for dubbed)
+    if let Some(pref) = f.language_preference {
+        score += (pref as f64) * 10_000.0;
+    }
+
+    // 2. format_note hints ("original", "default", "dubbed", "descriptive", "DRC")
+    if let Some(ref note) = f.format_note {
+        let lower = note.to_ascii_lowercase();
+        if lower.contains("original") || lower.contains("default") {
+            score += 50_000.0;
+        }
+        if lower.contains("dubbed") || lower.contains("descriptive") {
+            score -= 50_000.0;
+        }
+        if lower.contains("drc") {
+            score -= 200.0;
+        }
+    }
+
+    // 3. Match against the video's primary language (e.g. "en" vs "ja")
+    match (f.language.as_deref(), video_lang) {
+        (Some(fl), Some(vl)) if normalize_lang(fl) == normalize_lang(vl) => {
+            score += 25_000.0;
+        }
+        (None, _) => {
+            // Single-language video without language tag
+            score += 5_000.0;
+        }
+        _ => {}
+    }
+
+    // 4. Container & bitrate tie-breakers
+    if f.ext.as_deref() == Some("m4a") {
+        score += 500.0;
+    }
+    score += f.abr.or(f.tbr).unwrap_or(0.0);
+    score
 }
 
 fn video_score(f: &RawYtDlpFormat) -> f64 {
