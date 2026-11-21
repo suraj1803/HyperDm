@@ -66,7 +66,7 @@ jobs:
           releaseBody: |
             ## HyperDM ${{ github.ref_name }}
 
-            High-speed desktop download manager with dynamic file segmentation (work-stealing), Material Design 3 UI, browser extension integration, and system tray support.
+            High-speed desktop download manager with dynamic file segmentation (work-stealing), zero-setup YouTube video & audio downloading, a precision desktop UI, browser extension integration, and system tray support.
 
             ### Downloads
             - **Windows**: Download the `.exe` (NSIS installer) or `.msi` package.
