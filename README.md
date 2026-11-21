@@ -90,3 +90,14 @@ git push origin v0.1.0
 ## Architecture & Internals
 
 For a deep dive into the dynamic work-stealing algorithm, network optimizations, YouTube pipeline, and file map, see **[GUIDE.md](GUIDE.md)**.
+
+---
+
+## Notes & Disclaimer
+
+- **Windows SmartScreen**: Release binaries are built transparently via GitHub Actions and are currently unsigned. If Windows SmartScreen prompts *"Windows protected your PC"*, click **More info → Run anyway**.
+- **Usage**: Users are responsible for complying with the terms of service and copyright laws of any website they download content from.
+
+## License
+
+Licensed under the **[MIT License](LICENSE)**.
