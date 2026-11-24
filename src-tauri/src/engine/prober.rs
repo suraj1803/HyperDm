@@ -29,6 +29,70 @@ pub fn build_header_map(custom: &HashMap<String, String>) -> HeaderMap {
     map
 }
 
+pub fn is_googlevideo_url(raw_url: &str) -> bool {
+    Url::parse(raw_url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+        .map(|h| h == "googlevideo.com" || h.ends_with(".googlevideo.com"))
+        .unwrap_or(false)
+}
+
+/// Appends or replaces the `range=start-end` query parameter on a URL.
+/// Used for `googlevideo.com` to match YouTube's native player framing and stay inside
+/// the CDN's unthrottled initial burst window.
+pub fn with_query_range(raw_url: &str, start: u64, end: u64) -> String {
+    let Ok(mut parsed) = Url::parse(raw_url) else {
+        return raw_url.to_string();
+    };
+    let existing: Vec<(String, String)> = parsed
+        .query_pairs()
+        .filter(|(k, _)| !k.eq_ignore_ascii_case("range"))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    {
+        let mut pairs = parsed.query_pairs_mut();
+        pairs.clear();
+        for (k, v) in existing {
+            pairs.append_pair(&k, &v);
+        }
+        pairs.append_pair("range", &format!("{}-{}", start, end));
+    }
+    parsed.to_string()
+}
+
+fn strip_query_range(raw_url: &str) -> String {
+    let Ok(mut parsed) = Url::parse(raw_url) else {
+        return raw_url.to_string();
+    };
+    let has_range = parsed
+        .query_pairs()
+        .any(|(k, _)| k.eq_ignore_ascii_case("range"));
+    if !has_range {
+        return raw_url.to_string();
+    }
+    let existing: Vec<(String, String)> = parsed
+        .query_pairs()
+        .filter(|(k, _)| !k.eq_ignore_ascii_case("range"))
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    {
+        let mut pairs = parsed.query_pairs_mut();
+        pairs.clear();
+        for (k, v) in existing {
+            pairs.append_pair(&k, &v);
+        }
+    }
+    parsed.to_string()
+}
+
+fn extract_clen_from_url(raw_url: &str) -> Option<u64> {
+    let parsed = Url::parse(raw_url).ok()?;
+    parsed
+        .query_pairs()
+        .find(|(k, _)| k.eq_ignore_ascii_case("clen"))
+        .and_then(|(_, v)| v.parse::<u64>().ok())
+}
+
 pub fn build_http_client() -> Result<Client, DownloadError> {
     Client::builder()
         .user_agent(concat!(
@@ -40,7 +104,9 @@ pub fn build_http_client() -> Result<Client, DownloadError> {
         // instead of multiplexing all segments over a single HTTP/2 connection.
         .http1_only()
         .tcp_nodelay(true)
+        .tcp_keepalive(Some(Duration::from_secs(15)))
         .pool_max_idle_per_host(64)
+        .pool_idle_timeout(Duration::from_secs(30))
         .connect_timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()
@@ -60,10 +126,16 @@ pub async fn probe_url(
     }
 
     let extra_headers = build_header_map(custom_headers);
+    let is_googlevideo = is_googlevideo_url(raw_url);
+    let url_clen = if is_googlevideo {
+        extract_clen_from_url(raw_url).filter(|&n| n > 0)
+    } else {
+        None
+    };
 
-    // Attempt 1: HEAD request
+    // Attempt 1: HEAD request (skipped for googlevideo.com, which frequently rejects HEAD)
     let mut final_url = raw_url.to_string();
-    let mut total_size: Option<u64> = None;
+    let mut total_size: Option<u64> = url_clen;
     let mut supports_range = false;
     let mut etag: Option<String> = None;
     let mut last_modified: Option<String> = None;
@@ -71,65 +143,78 @@ pub async fn probe_url(
     let mut content_disposition: Option<String> = None;
     let mut head_ok = false;
 
-    if let Ok(resp) = client
-        .head(raw_url)
-        .headers(extra_headers.clone())
-        .send()
-        .await
-    {
-        if resp.status().is_success() {
-            head_ok = true;
-            final_url = resp.url().to_string();
-            let headers = resp.headers();
+    if !is_googlevideo {
+        if let Ok(resp) = client
+            .head(raw_url)
+            .headers(extra_headers.clone())
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                head_ok = true;
+                final_url = resp.url().to_string();
+                let headers = resp.headers();
 
-            total_size = headers
-                .get(header::CONTENT_LENGTH)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|s| s.parse::<u64>().ok());
+                total_size = headers
+                    .get(header::CONTENT_LENGTH)
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|s| s.parse::<u64>().ok());
 
-            supports_range = headers
-                .get(header::ACCEPT_RANGES)
-                .and_then(|v| v.to_str().ok())
-                .map(|v| v.to_ascii_lowercase().contains("bytes"))
-                .unwrap_or(false);
+                supports_range = headers
+                    .get(header::ACCEPT_RANGES)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|v| v.to_ascii_lowercase().contains("bytes"))
+                    .unwrap_or(false);
 
-            etag = headers
-                .get(header::ETAG)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string());
+                etag = headers
+                    .get(header::ETAG)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
 
-            last_modified = headers
-                .get(header::LAST_MODIFIED)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string());
+                last_modified = headers
+                    .get(header::LAST_MODIFIED)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
 
-            content_type = headers
-                .get(header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string());
+                content_type = headers
+                    .get(header::CONTENT_TYPE)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
 
-            content_disposition = headers
-                .get(header::CONTENT_DISPOSITION)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string());
+                content_disposition = headers
+                    .get(header::CONTENT_DISPOSITION)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+            }
         }
     }
 
-    // Attempt 2: Fallback to GET Range: bytes=0-0 if HEAD failed or didn't reveal size/range support
+    // Attempt 2: Fallback to GET Range: bytes=0-0 (or &range=0-0 for googlevideo.com with clen)
     if !head_ok || total_size.is_none() || !supports_range {
-        let resp = client
-            .get(&final_url)
-            .headers(extra_headers)
-            .header(header::RANGE, "bytes=0-0")
-            .send()
-            .await?;
+        let used_query_range = is_googlevideo && url_clen.is_some();
+        let req = if used_query_range {
+            client
+                .get(with_query_range(&final_url, 0, 0))
+                .headers(extra_headers)
+        } else {
+            client
+                .get(&final_url)
+                .headers(extra_headers)
+                .header(header::RANGE, "bytes=0-0")
+        };
+
+        let resp = req.send().await?;
 
         let status = resp.status();
         if !status.is_success() && status.as_u16() != 206 {
             return Err(DownloadError::HttpStatus(status.as_u16()));
         }
 
-        final_url = resp.url().to_string();
+        final_url = if used_query_range {
+            strip_query_range(resp.url().as_str())
+        } else {
+            resp.url().to_string()
+        };
         let headers = resp.headers();
 
         if status.as_u16() == 206 {
@@ -141,6 +226,12 @@ pub async fn probe_url(
                 if let Some(parsed_total) = parse_content_range_total(cr) {
                     total_size = Some(parsed_total);
                 }
+            }
+        } else if used_query_range {
+            // googlevideo.com returns 200 OK for &range=0-0 with Content-Length: 1
+            supports_range = true;
+            if total_size.is_none() {
+                total_size = extract_clen_from_url(&final_url);
             }
         } else {
             // 200 OK in response to Range: bytes=0-0 means server ignored Range

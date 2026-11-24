@@ -846,3 +846,229 @@ async fn test_adaptive_video_audio_download_and_ffmpeg_mux() {
         }
     }
 }
+
+#[test]
+fn test_googlevideo_url_detection_and_query_range_helpers() {
+    use crate::engine::prober::{is_googlevideo_url, with_query_range};
+
+    assert!(is_googlevideo_url(
+        "https://rr3---sn-4g5e6nsz.googlevideo.com/videoplayback?expire=1700000000&clen=123456&n=abc"
+    ));
+    assert!(is_googlevideo_url("https://googlevideo.com/videoplayback"));
+    assert!(!is_googlevideo_url("https://example.com/googlevideo.com/file.mp4"));
+
+    let base = "https://rr1---sn-test.googlevideo.com/videoplayback?expire=1700000000&clen=5000000&n=xyz";
+    let with_r = with_query_range(base, 0, 2097151);
+    assert!(with_r.contains("expire=1700000000"));
+    assert!(with_r.contains("clen=5000000"));
+    assert!(with_r.contains("n=xyz"));
+    assert!(with_r.contains("range=0-2097151"));
+
+    // Replacing an existing range= parameter should not duplicate it
+    let replaced = with_query_range(&with_r, 2097152, 4194303);
+    assert_eq!(replaced.matches("range=").count(), 1);
+    assert!(replaced.contains("range=2097152-4194303"));
+    assert!(replaced.contains("expire=1700000000"));
+}
+
+#[tokio::test]
+async fn test_query_range_worker_sub_ranging_and_integrity() {
+    use std::collections::HashMap;
+    use std::fs::OpenOptions;
+    use tokio_util::sync::CancellationToken;
+
+    use crate::engine::prober::build_http_client;
+    use crate::engine::segment::LiveSegment;
+    use crate::engine::worker::{run_range_worker_with_options, WorkerOutcome};
+
+    let payload = Arc::new(deterministic_payload(3 * 1024 * 1024)); // 3 MiB (> 2 MiB sub-range)
+    let expected_hash = sha256_hex(&payload);
+    let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let srv_payload = Arc::clone(&payload);
+    let srv_count = Arc::clone(&request_count);
+
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                break;
+            };
+            let payload = Arc::clone(&srv_payload);
+            let count = Arc::clone(&srv_count);
+            tokio::spawn(async move {
+                let mut req_buf = vec![0u8; 4096];
+                let Ok(n) = socket.read(&mut req_buf).await else {
+                    return;
+                };
+                if n == 0 {
+                    return;
+                }
+                count.fetch_add(1, Ordering::SeqCst);
+                let req_str = String::from_utf8_lossy(&req_buf[..n]);
+                let first_line = req_str.lines().next().unwrap_or("");
+                let target = first_line.split_whitespace().nth(1).unwrap_or("/");
+                let parsed = url::Url::parse(&format!("http://localhost{}", target)).unwrap();
+                let range_val = parsed
+                    .query_pairs()
+                    .find(|(k, _)| k == "range")
+                    .map(|(_, v)| v.into_owned())
+                    .expect("Expected ?range= query parameter");
+                let mut parts = range_val.split('-');
+                let start: usize = parts.next().unwrap().parse().unwrap();
+                let end: usize = parts.next().unwrap().parse::<usize>().unwrap().min(payload.len() - 1);
+                let slice = &payload[start..=end];
+
+                let header = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    slice.len()
+                );
+                let _ = socket.write_all(header.as_bytes()).await;
+                let _ = socket.write_all(slice).await;
+            });
+        }
+    });
+
+    let tmp = TempDir::new().unwrap();
+    let part_path = tmp.path().join("yt_query_range.part");
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&part_path)
+        .unwrap();
+    file.set_len(payload.len() as u64).unwrap();
+
+    let seg = Arc::new(LiveSegment::new(1, 0, payload.len() as u64 - 1));
+    let client = build_http_client().unwrap();
+    let url = format!("http://{}/videoplayback?clen={}&n=test", addr, payload.len());
+
+    let outcome = run_range_worker_with_options(
+        client,
+        url,
+        None,
+        HashMap::new(),
+        Arc::new(file),
+        Arc::clone(&seg),
+        CancellationToken::new(),
+        true,
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(matches!(outcome, WorkerOutcome::Completed { segment_id: 1 }));
+    // 3 MiB with 2 MiB sub-ranges must issue at least 2 requests
+    assert!(request_count.load(Ordering::SeqCst) >= 2);
+    let disk_bytes = std::fs::read(&part_path).unwrap();
+    assert_eq!(sha256_hex(&disk_bytes), expected_hash);
+}
+
+#[tokio::test]
+async fn test_worker_recovers_from_mid_stream_stall_timeout() {
+    use std::collections::HashMap;
+    use std::fs::OpenOptions;
+    use tokio_util::sync::CancellationToken;
+
+    use crate::engine::prober::build_http_client;
+    use crate::engine::segment::LiveSegment;
+    use crate::engine::worker::{run_range_worker_with_options, WorkerOutcome};
+
+    let payload = Arc::new(deterministic_payload(512 * 1024)); // 512 KiB
+    let expected_hash = sha256_hex(&payload);
+    let stall_once = Arc::new(AtomicBool::new(true));
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let srv_payload = Arc::clone(&payload);
+    let srv_stall = Arc::clone(&stall_once);
+
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                break;
+            };
+            let payload = Arc::clone(&srv_payload);
+            let stall_flag = Arc::clone(&srv_stall);
+            tokio::spawn(async move {
+                let mut req_buf = vec![0u8; 4096];
+                let Ok(n) = socket.read(&mut req_buf).await else {
+                    return;
+                };
+                if n == 0 {
+                    return;
+                }
+                let req_str = String::from_utf8_lossy(&req_buf[..n]);
+                let mut start = 0usize;
+                let mut end = payload.len() - 1;
+                for line in req_str.lines() {
+                    if let Some(val) = line.strip_prefix("Range: ").or_else(|| line.strip_prefix("range: ")) {
+                        if let Some(bp) = val.trim().strip_prefix("bytes=") {
+                            let mut parts = bp.split('-');
+                            if let (Some(s), Some(e)) = (parts.next(), parts.next()) {
+                                start = s.parse().unwrap_or(0);
+                                end = e.parse().unwrap_or(payload.len() - 1).min(payload.len() - 1);
+                            }
+                        }
+                    }
+                }
+                let slice = &payload[start..=end];
+                let header = format!(
+                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {}-{}/{}\r\nConnection: close\r\n\r\n",
+                    slice.len(),
+                    start,
+                    end,
+                    payload.len()
+                );
+                if socket.write_all(header.as_bytes()).await.is_err() {
+                    return;
+                }
+
+                if stall_flag
+                    .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
+                    // Send first 64 KiB then stall well beyond the test stall timeout
+                    let _ = socket.write_all(&slice[..65536.min(slice.len())]).await;
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+                    return;
+                }
+
+                let _ = socket.write_all(slice).await;
+            });
+        }
+    });
+
+    let tmp = TempDir::new().unwrap();
+    let part_path = tmp.path().join("stall_recovery.part");
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&part_path)
+        .unwrap();
+    file.set_len(payload.len() as u64).unwrap();
+
+    let seg = Arc::new(LiveSegment::new(1, 0, payload.len() as u64 - 1));
+    let client = build_http_client().unwrap();
+    let url = format!("http://{}/stall.bin", addr);
+
+    let outcome = run_range_worker_with_options(
+        client,
+        url,
+        None,
+        HashMap::new(),
+        Arc::new(file),
+        Arc::clone(&seg),
+        CancellationToken::new(),
+        false,
+        Duration::from_secs(5),
+        Duration::from_millis(250),
+    )
+    .await;
+
+    assert!(matches!(outcome, WorkerOutcome::Completed { segment_id: 1 }));
+    let disk_bytes = std::fs::read(&part_path).unwrap();
+    assert_eq!(sha256_hex(&disk_bytes), expected_hash);
+}

@@ -32,14 +32,21 @@ use reqwest::{header, Client};
 use tokio_util::sync::CancellationToken;
 
 use crate::engine::models::{DownloadError, SegmentStatus};
-use crate::engine::prober::build_header_map;
+use crate::engine::prober::{build_header_map, is_googlevideo_url, with_query_range};
 use crate::engine::segment::LiveSegment;
 
 const MAX_RETRIES: u32 = 5;
+const MAX_THROTTLE_RECONNECTS: u32 = 8;
 const WRITE_BUFFER_THRESHOLD: usize = 512 * 1024; // 512 KiB buffered flush to reduce spawn_blocking overhead
-/// YouTube's googlevideo CDN throttles individual Range requests >= ~10 MiB.
-/// Capping each sub-range request to 8 MiB over HTTP/1.1 Keep-Alive keeps full line speed.
-const YOUTUBE_SUB_RANGE_BYTES: u64 = 8 * 1024 * 1024;
+/// YouTube's googlevideo CDN bursts the first ~2–4 MiB at full line speed before
+/// applying trickle pacing. Capping each `&range=` sub-request to 2 MiB over
+/// HTTP/1.1 Keep-Alive keeps every chunk inside the unthrottled burst window.
+const YOUTUBE_SUB_RANGE_BYTES: u64 = 2 * 1024 * 1024;
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(15);
+const YT_THROTTLE_GRACE: Duration = Duration::from_secs(2);
+const YT_THROTTLE_MIN_BPS: u64 = 48 * 1024; // 48 KiB/s
+const YT_THROTTLE_WINDOW: Duration = Duration::from_secs(3);
 
 #[derive(Debug)]
 pub enum WorkerOutcome {
@@ -59,10 +66,41 @@ pub async fn run_range_worker(
     segment: Arc<LiveSegment>,
     cancel: CancellationToken,
 ) -> WorkerOutcome {
+    run_range_worker_with_options(
+        client,
+        url,
+        etag,
+        custom_headers,
+        file,
+        segment,
+        cancel,
+        false,
+        REQUEST_TIMEOUT,
+        STREAM_STALL_TIMEOUT,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_range_worker_with_options(
+    client: Client,
+    url: String,
+    etag: Option<String>,
+    custom_headers: HashMap<String, String>,
+    file: Arc<File>,
+    segment: Arc<LiveSegment>,
+    cancel: CancellationToken,
+    force_query_range: bool,
+    request_timeout: Duration,
+    stall_timeout: Duration,
+) -> WorkerOutcome {
     let seg_id = segment.id;
     let extra_headers = build_header_map(&custom_headers);
-    let is_googlevideo = url.contains("googlevideo.com");
+    let is_googlevideo = is_googlevideo_url(&url);
+    let use_query_range = is_googlevideo || force_query_range;
     let mut attempt: u32 = 0;
+    let mut throttle_reconnects: u32 = 0;
+    let mut force_fresh_socket = false;
 
     loop {
         if cancel.is_cancelled() {
@@ -79,7 +117,7 @@ pub async fn run_range_worker(
             return WorkerOutcome::Completed { segment_id: seg_id };
         };
 
-        let req_end = if is_googlevideo {
+        let req_end = if use_query_range {
             range_end.min(range_start.saturating_add(YOUTUBE_SUB_RANGE_BYTES - 1))
         } else {
             range_end
@@ -88,15 +126,23 @@ pub async fn run_range_worker(
 
         segment.set_status(SegmentStatus::Connecting);
 
-        let mut req = client
-            .get(&url)
-            .headers(extra_headers.clone())
-            .header(header::RANGE, format!("bytes={}-{}", range_start, req_end));
-        if attempt > 0 {
+        let mut req = if use_query_range {
+            let req_url = with_query_range(&url, range_start, req_end);
+            client.get(&req_url).headers(extra_headers.clone())
+        } else {
+            let mut r = client
+                .get(&url)
+                .headers(extra_headers.clone())
+                .header(header::RANGE, format!("bytes={}-{}", range_start, req_end));
+            if let Some(ref tag) = etag {
+                r = r.header(header::IF_RANGE, tag);
+            }
+            r
+        };
+
+        if attempt > 0 || force_fresh_socket {
             req = req.header(header::CONNECTION, "close");
-        }
-        if let Some(ref tag) = etag {
-            req = req.header(header::IF_RANGE, tag);
+            force_fresh_socket = false;
         }
 
         let resp_res = tokio::select! {
@@ -105,16 +151,21 @@ pub async fn run_range_worker(
                 segment.set_status(SegmentStatus::Paused);
                 return WorkerOutcome::Paused { segment_id: seg_id };
             }
-            res = req.send() => res,
+            res = tokio::time::timeout(request_timeout, req.send()) => res,
         };
 
         let resp = match resp_res {
-            Ok(r) => {
+            Ok(Ok(r)) => {
                 let code = r.status().as_u16();
-                if code != 206 && !(code == 200 && range_start == 0) {
+                let valid_status = code == 206
+                    || (use_query_range && code == 200)
+                    || (code == 200 && range_start == 0);
+                if !valid_status {
                     attempt += 1;
                     segment.retries.store(attempt, Ordering::Relaxed);
-                    if attempt > MAX_RETRIES {
+                    // Fail fast on expired YouTube URLs (403/410) after 1 retry so manager can refresh
+                    let fast_fail = is_googlevideo && (code == 403 || code == 410) && attempt >= 2;
+                    if fast_fail || attempt > MAX_RETRIES {
                         segment.speed_bps.store(0, Ordering::Relaxed);
                         segment.set_status(SegmentStatus::Error);
                         return WorkerOutcome::Failed {
@@ -130,7 +181,7 @@ pub async fn run_range_worker(
                 }
                 r
             }
-            Err(err) => {
+            Ok(Err(err)) => {
                 attempt += 1;
                 segment.retries.store(attempt, Ordering::Relaxed);
                 if attempt > MAX_RETRIES {
@@ -147,15 +198,36 @@ pub async fn run_range_worker(
                 }
                 continue;
             }
+            Err(_) => {
+                attempt += 1;
+                segment.retries.store(attempt, Ordering::Relaxed);
+                force_fresh_socket = true;
+                if attempt > MAX_RETRIES {
+                    segment.speed_bps.store(0, Ordering::Relaxed);
+                    segment.set_status(SegmentStatus::Error);
+                    return WorkerOutcome::Failed {
+                        segment_id: seg_id,
+                        error: "Range request timed out".to_string(),
+                    };
+                }
+                if !backoff_wait(attempt, &cancel).await {
+                    segment.set_status(SegmentStatus::Paused);
+                    return WorkerOutcome::Paused { segment_id: seg_id };
+                }
+                continue;
+            }
         };
 
         segment.set_status(SegmentStatus::Downloading);
         let mut stream = resp.bytes_stream();
         let mut write_buf: Vec<u8> = Vec::with_capacity(WRITE_BUFFER_THRESHOLD + 65536);
 
+        let req_started = Instant::now();
         let mut window_start = Instant::now();
         let mut window_bytes: u64 = 0;
+        let mut slow_since: Option<Instant> = None;
         let mut stream_err: Option<String> = None;
+        let mut throttled = false;
         let mut reached_end = false;
 
         loop {
@@ -172,11 +244,11 @@ pub async fn run_range_worker(
                         return WorkerOutcome::Paused { segment_id: seg_id };
                     }
                 }
-                chunk = stream.next() => chunk,
+                chunk = tokio::time::timeout(stall_timeout, stream.next()) => chunk,
             };
 
             match next_chunk {
-                Some(Ok(bytes)) => {
+                Ok(Some(Ok(bytes))) => {
                     if bytes.is_empty() {
                         continue;
                     }
@@ -192,6 +264,20 @@ pub async fn run_range_worker(
                         segment.speed_bps.store(bps, Ordering::Relaxed);
                         window_start = Instant::now();
                         window_bytes = 0;
+
+                        if is_googlevideo && req_started.elapsed() >= YT_THROTTLE_GRACE {
+                            if bps < YT_THROTTLE_MIN_BPS {
+                                let since = *slow_since.get_or_insert_with(Instant::now);
+                                if since.elapsed() >= YT_THROTTLE_WINDOW {
+                                    let _ = flush_buffer(&file, &segment, &mut write_buf).await;
+                                    throttled = true;
+                                    force_fresh_socket = true;
+                                    break;
+                                }
+                            } else {
+                                slow_since = None;
+                            }
+                        }
                     }
 
                     if write_buf.len() >= WRITE_BUFFER_THRESHOLD {
@@ -213,12 +299,13 @@ pub async fn run_range_worker(
                         }
                     }
                 }
-                Some(Err(e)) => {
+                Ok(Some(Err(e))) => {
                     let _ = flush_buffer(&file, &segment, &mut write_buf).await;
                     stream_err = Some(e.to_string());
+                    force_fresh_socket = true;
                     break;
                 }
-                None => {
+                Ok(None) => {
                     // Stream finished cleanly; flush remaining buffer
                     if let Err(e) = flush_buffer(&file, &segment, &mut write_buf).await {
                         segment.speed_bps.store(0, Ordering::Relaxed);
@@ -230,6 +317,12 @@ pub async fn run_range_worker(
                     }
                     break;
                 }
+                Err(_) => {
+                    let _ = flush_buffer(&file, &segment, &mut write_buf).await;
+                    stream_err = Some("Stream stalled (read timeout)".to_string());
+                    force_fresh_socket = true;
+                    break;
+                }
             }
         }
 
@@ -239,12 +332,34 @@ pub async fn run_range_worker(
             return WorkerOutcome::Completed { segment_id: seg_id };
         }
 
-        // If we intentionally requested an 8 MiB sub-range (e.g., googlevideo.com) and it finished cleanly,
+        if throttled {
+            throttle_reconnects += 1;
+            if throttle_reconnects <= MAX_THROTTLE_RECONNECTS {
+                tokio::select! {
+                    _ = cancel.cancelled() => {
+                        segment.speed_bps.store(0, Ordering::Relaxed);
+                        segment.set_status(SegmentStatus::Paused);
+                        return WorkerOutcome::Paused { segment_id: seg_id };
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+                }
+                continue;
+            }
+            segment.speed_bps.store(0, Ordering::Relaxed);
+            segment.set_status(SegmentStatus::Error);
+            return WorkerOutcome::Failed {
+                segment_id: seg_id,
+                error: "YouTube stream throttled persistently".to_string(),
+            };
+        }
+
+        // If we intentionally requested a 2 MiB sub-range (e.g., googlevideo.com) and it finished cleanly,
         // immediately continue to the next sub-range over the same HTTP/1.1 Keep-Alive connection.
         if is_sub_ranged && stream_err.is_none() {
             if let Some((next_start, _)) = segment.next_range() {
                 if next_start > req_end {
                     attempt = 0;
+                    throttle_reconnects = 0;
                     continue;
                 }
             }

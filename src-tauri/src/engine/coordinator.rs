@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::engine::models::{DownloadError, DownloadStatus, DownloadTaskInfo, SegmentStatus};
-use crate::engine::prober::build_header_map;
+use crate::engine::prober::{build_header_map, is_googlevideo_url, with_query_range};
 use crate::engine::segment::{build_initial_segments, try_split_largest_segment, LiveSegment};
 use crate::engine::worker::{run_range_worker, run_single_stream_worker, WorkerOutcome};
 use crate::engine::youtube::mux_video_and_audio;
@@ -93,6 +93,11 @@ pub async fn run_download_coordinator(
     }
 
     let total_size = task.total_size.unwrap();
+    let effective_min_split = if is_googlevideo_url(&task.final_url) {
+        min_split_size.max(1024 * 1024)
+    } else {
+        min_split_size
+    };
 
     // Open or create & pre-allocate the .part file
     let file = match prepare_part_file(&part_path, total_size) {
@@ -112,7 +117,7 @@ pub async fn run_download_coordinator(
             .map(|s| Arc::new(LiveSegment::from_snapshot(s)))
             .collect()
     } else {
-        build_initial_segments(total_size, task.max_connections, min_split_size)
+        build_initial_segments(total_size, task.max_connections, effective_min_split)
     };
 
     let mut next_seg_id: u32 = segments.iter().map(|s| s.id).max().unwrap_or(0) + 1;
@@ -181,7 +186,7 @@ pub async fn run_download_coordinator(
                             if let Some(new_seg) = try_split_largest_segment(
                                 &segments,
                                 next_seg_id,
-                                min_split_size,
+                                effective_min_split,
                             ) {
                                 next_seg_id += 1;
                                 task.dynamic_splits += 1;
@@ -433,6 +438,12 @@ async fn download_companion_audio(
     if let Some(p) = probed {
         if p.supports_range {
             if let Some(total) = p.total_size {
+                let use_query_range = is_googlevideo_url(&p.final_url);
+                let chunk_size: u64 = if use_query_range {
+                    2 * 1024 * 1024
+                } else {
+                    AUDIO_CHUNK
+                };
                 let mut offset: u64 = 0;
                 let mut attempt: u32 = 0;
 
@@ -440,11 +451,16 @@ async fn download_companion_audio(
                     if cancel.is_cancelled() {
                         return Err(DownloadError::Cancelled);
                     }
-                    let end = (offset + AUDIO_CHUNK - 1).min(total - 1);
-                    let mut req = client
-                        .get(&p.final_url)
-                        .headers(extra.clone())
-                        .header(reqwest::header::RANGE, format!("bytes={}-{}", offset, end));
+                    let end = (offset + chunk_size - 1).min(total - 1);
+                    let mut req = if use_query_range {
+                        let req_url = with_query_range(&p.final_url, offset, end);
+                        client.get(&req_url).headers(extra.clone())
+                    } else {
+                        client
+                            .get(&p.final_url)
+                            .headers(extra.clone())
+                            .header(reqwest::header::RANGE, format!("bytes={}-{}", offset, end))
+                    };
                     if attempt > 0 {
                         // Force a fresh TCP/TLS socket on retry instead of reusing a stale pooled socket
                         req = req.header(reqwest::header::CONNECTION, "close");
@@ -452,7 +468,7 @@ async fn download_companion_audio(
 
                     let send_res = tokio::select! {
                         _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
-                        r = tokio::time::timeout(Duration::from_secs(30), req.send()) => r,
+                        r = tokio::time::timeout(Duration::from_secs(15), req.send()) => r,
                     };
 
                     let resp = match send_res {
@@ -494,7 +510,7 @@ async fn download_companion_audio(
                     loop {
                         let next = tokio::select! {
                             _ = cancel.cancelled() => return Err(DownloadError::Cancelled),
-                            c = tokio::time::timeout(Duration::from_secs(30), stream.next()) => c,
+                            c = tokio::time::timeout(Duration::from_secs(15), stream.next()) => c,
                         };
                         match next {
                             Ok(Some(Ok(bytes))) => {

@@ -262,43 +262,60 @@ impl DownloadManager {
             let looks_expired = task
                 .error_message
                 .as_deref()
-                .map(|m| m.contains("403") || m.contains("410"))
+                .map(|m| m.contains("403") || m.contains("410") || m.contains("throttled"))
                 .unwrap_or(false)
                 || age_hours >= 5;
 
-            if looks_expired {
-                if let Some(ref page_url) = task.source_page_url {
-                    if let Ok(yt) = self.probe_youtube(page_url).await {
-                        let matched = task
-                            .media_format_id
-                            .as_deref()
-                            .and_then(|fid| yt.formats.iter().find(|f| f.id == fid))
-                            .or_else(|| {
-                                task.media_quality_label
-                                    .as_deref()
-                                    .and_then(|lbl| yt.formats.iter().find(|f| f.label == lbl))
-                            })
-                            .or_else(|| yt.formats.first());
-
-                        if let Some(fmt) = matched {
-                            let mut guard = self.state.write().unwrap();
-                            if let Some(t) = guard.tasks.get_mut(&id) {
-                                t.url = fmt.video_url.clone();
-                                t.final_url = fmt.video_url.clone();
-                                t.companion_audio_url = fmt.audio_url.clone();
-                                t.request_headers = fmt.http_headers.clone();
-                                t.created_at = Utc::now();
-                            }
-                            drop(guard);
-                            self.persist_now();
-                        }
-                    }
-                }
+            if looks_expired && task.source_page_url.is_some() {
+                let _ = self.refresh_youtube_urls(id).await;
             }
         }
 
         self.spawn_task(id)?;
         self.get_download(id).ok_or(DownloadError::NotFound(id))
+    }
+
+    async fn refresh_youtube_urls(&self, id: Uuid) -> bool {
+        let Some(task) = self.get_download(id) else {
+            return false;
+        };
+        let Some(ref page_url) = task.source_page_url else {
+            return false;
+        };
+        let Ok(yt) = self.probe_youtube(page_url).await else {
+            return false;
+        };
+
+        let matched = task
+            .media_format_id
+            .as_deref()
+            .and_then(|fid| yt.formats.iter().find(|f| f.id == fid))
+            .or_else(|| {
+                task.media_quality_label
+                    .as_deref()
+                    .and_then(|lbl| yt.formats.iter().find(|f| f.label == lbl))
+            })
+            .or_else(|| yt.formats.first());
+
+        let Some(fmt) = matched else {
+            return false;
+        };
+
+        {
+            let mut guard = self.state.write().unwrap();
+            if let Some(t) = guard.tasks.get_mut(&id) {
+                t.url = fmt.video_url.clone();
+                t.final_url = fmt.video_url.clone();
+                t.companion_audio_url = fmt.audio_url.clone();
+                t.request_headers = fmt.http_headers.clone();
+                t.error_message = None;
+                t.created_at = Utc::now();
+            } else {
+                return false;
+            }
+        }
+        self.persist_now();
+        true
     }
 
     pub fn pause_all(&self) {
@@ -491,15 +508,78 @@ impl DownloadManager {
                 (progress_mgr.emitter)(updated);
             });
 
-            let mut final_task = run_download_coordinator(
-                client,
-                manager.data_dir.clone(),
-                task,
-                min_split_size,
-                token,
-                on_progress,
-            )
-            .await;
+            let mut current_task = task;
+            let mut current_token = token;
+            let mut auto_refreshed = false;
+
+            let mut final_task = loop {
+                let result = run_download_coordinator(
+                    client.clone(),
+                    manager.data_dir.clone(),
+                    current_task,
+                    min_split_size,
+                    current_token,
+                    Arc::clone(&on_progress),
+                )
+                .await;
+
+                let should_refresh = !auto_refreshed
+                    && result.status == DownloadStatus::Error
+                    && result.source_page_url.is_some()
+                    && result
+                        .error_message
+                        .as_deref()
+                        .map(|m| m.contains("403") || m.contains("410") || m.contains("throttled"))
+                        .unwrap_or(false);
+
+                if !should_refresh {
+                    break result;
+                }
+
+                let user_stopped = {
+                    let guard = manager.state.read().unwrap();
+                    guard.cancelled_ids.contains_key(&result.id)
+                        || !guard.tasks.contains_key(&result.id)
+                };
+                if user_stopped {
+                    break result;
+                }
+
+                auto_refreshed = true;
+                // Save latest segment progress before refreshing signed URLs
+                {
+                    let mut guard = manager.state.write().unwrap();
+                    if guard.tasks.contains_key(&result.id) {
+                        guard.tasks.insert(result.id, result.clone());
+                    }
+                }
+
+                if !manager.refresh_youtube_urls(result.id).await {
+                    break result;
+                }
+
+                let next_token = CancellationToken::new();
+                let next_task = {
+                    let mut guard = manager.state.write().unwrap();
+                    if guard.cancelled_ids.contains_key(&result.id) {
+                        break result;
+                    }
+                    if let Some(run) = guard.active_runs.get_mut(&result.id) {
+                        if run.run_id == run_id {
+                            run.token = next_token.clone();
+                        }
+                    }
+                    guard.tasks.get(&result.id).cloned()
+                };
+
+                match next_task {
+                    Some(t) => {
+                        current_task = t;
+                        current_token = next_token;
+                    }
+                    None => break result,
+                }
+            };
 
             {
                 let mut guard = manager.state.write().unwrap();
