@@ -289,9 +289,9 @@ export function App() {
     >
       {/* Main Workspace Area */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Slim Precision Sidebar */}
+        {/* Precision Sidebar */}
         <aside
-          className="flex w-[192px] shrink-0 flex-col justify-between"
+          className="flex w-[224px] shrink-0 flex-col justify-between"
           style={{
             backgroundColor: "var(--bg-sidebar)",
             borderRight: "1px solid var(--border-subtle)",
@@ -300,23 +300,23 @@ export function App() {
           <div>
             {/* Brand Header */}
             <div
-              className="flex h-[48px] items-center justify-between px-3.5"
+              className="flex h-[56px] items-center justify-between px-4"
               style={{ borderBottom: "1px solid var(--border-subtle)" }}
             >
               <div className="flex items-center gap-2.5">
                 <div
-                  className="flex h-6 w-6 items-center justify-center rounded-[6px]"
+                  className="flex h-7 w-7 items-center justify-center rounded-[7px]"
                   style={{
                     backgroundColor: "var(--accent)",
                     color: "var(--accent-fg)",
                   }}
                 >
-                  <Zap className="h-3.5 w-3.5 fill-current" />
+                  <Zap className="h-4 w-4 fill-current" />
                 </div>
-                <span className="text-[13.5px] font-semibold tracking-tight">HyperDM</span>
+                <span className="text-[15px] font-semibold tracking-tight">HyperDM</span>
               </div>
               <span
-                className="font-mono text-[10.5px]"
+                className="font-mono text-[11.5px]"
                 style={{ color: "var(--text-muted)" }}
               >
                 v1.0
@@ -324,17 +324,17 @@ export function App() {
             </div>
 
             {/* Primary Action */}
-            <div className="p-3">
+            <div className="p-3.5">
               <button
                 onClick={() => setShowAddModal(true)}
-                className="ui-btn-primary flex h-8 w-full items-center justify-between rounded-[6px] px-3 text-[12.5px] font-medium cursor-pointer"
+                className="ui-btn-primary flex h-9 w-full items-center justify-between rounded-[7px] px-3.5 text-[13.5px] font-medium cursor-pointer"
               >
-                <span className="flex items-center gap-1.5">
-                  <Plus className="h-3.5 w-3.5" />
+                <span className="flex items-center gap-2">
+                  <Plus className="h-4 w-4" />
                   New Download
                 </span>
                 <span
-                  className="font-mono text-[10.5px] opacity-75"
+                  className="font-mono text-[11.5px] opacity-80"
                   title="Shortcut: Ctrl+N"
                 >
                   ^N
@@ -343,9 +343,9 @@ export function App() {
             </div>
 
             {/* Filter Navigation */}
-            <div className="px-2.5 pt-1">
+            <div className="px-3 pt-1">
               <div
-                className="px-2 pb-1.5 text-[10.5px] font-medium uppercase tracking-wider"
+                className="px-2.5 pb-2 text-[11.5px] font-medium uppercase tracking-wider"
                 style={{ color: "var(--text-muted)" }}
               >
                 Queue
@@ -358,7 +358,7 @@ export function App() {
                     <button
                       key={item.id}
                       onClick={() => setFilter(item.id)}
-                      className="flex h-8 w-full items-center justify-between rounded-[6px] px-2.5 text-[12.5px] font-medium transition-colors cursor-pointer"
+                      className="flex h-9 w-full items-center justify-between rounded-[7px] px-3 text-[13.5px] font-medium transition-colors cursor-pointer"
                       style={{
                         backgroundColor: active ? "var(--bg-active)" : "transparent",
                         color: active ? "var(--text-primary)" : "var(--text-secondary)",
@@ -366,7 +366,7 @@ export function App() {
                     >
                       <span className="flex items-center gap-2.5 truncate">
                         <Icon
-                          className="h-3.5 w-3.5 shrink-0"
+                          className="h-4 w-4 shrink-0"
                           style={{
                             color: active ? "var(--accent-text)" : "var(--text-muted)",
                           }}
@@ -374,7 +374,7 @@ export function App() {
                         <span className="truncate">{item.label}</span>
                       </span>
                       <span
-                        className="font-mono text-[11px] tabular-nums"
+                        className="font-mono text-[12px] tabular-nums"
                         style={{
                           color: active ? "var(--text-primary)" : "var(--text-muted)",
                         }}
@@ -390,22 +390,22 @@ export function App() {
 
           {/* Sidebar Bottom Engine Summary */}
           <div
-            className="px-3.5 py-3 text-[11.5px]"
+            className="px-4 py-3.5 text-[12.5px]"
             style={{
               borderTop: "1px solid var(--border-subtle)",
               color: "var(--text-muted)",
             }}
           >
             <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
-                <Split className="h-3.5 w-3.5" style={{ color: "var(--success)" }} />
+              <span className="flex items-center gap-2">
+                <Split className="h-4 w-4" style={{ color: "var(--success)" }} />
                 <span style={{ color: "var(--text-secondary)" }}>Work-Stealing</span>
               </span>
-              <span className="font-mono text-[11px] tabular-nums">
+              <span className="font-mono text-[12px] tabular-nums">
                 {settings.maxConnectionsPerDownload}x
               </span>
             </div>
-            <div className="mt-1.5 flex items-center justify-between text-[11px]">
+            <div className="mt-2 flex items-center justify-between text-[12px]">
               <span>Concurrent slots</span>
               <span className="font-mono tabular-nums">{settings.maxConcurrentDownloads}</span>
             </div>
@@ -414,15 +414,15 @@ export function App() {
 
         {/* Right Main Content Column */}
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Compact Top Toolbar */}
+          {/* Top Toolbar */}
           <header
-            className="flex h-[48px] shrink-0 items-center justify-between gap-3 px-4"
+            className="flex h-[56px] shrink-0 items-center justify-between gap-3 px-5"
             style={{ borderBottom: "1px solid var(--border-subtle)" }}
           >
             {/* Inline Search */}
-            <div className="relative flex-1 max-w-md">
+            <div className="relative flex-1 max-w-lg">
               <Search
-                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
                 style={{ color: "var(--text-muted)" }}
               />
               <input
@@ -431,7 +431,7 @@ export function App() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter downloads by name or URL..."
-                className="ui-input h-8 w-full rounded-[6px] pl-9 pr-12 text-[12.5px]"
+                className="ui-input h-9 w-full rounded-[7px] pl-9.5 pr-12 text-[13.5px]"
               />
               {searchQuery ? (
                 <button
@@ -439,41 +439,41 @@ export function App() {
                   className="ui-btn-ghost absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 cursor-pointer"
                   aria-label="Clear search"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="h-4 w-4" />
                 </button>
               ) : (
-                <span className="ui-kbd pointer-events-none absolute right-2 top-1/2 -translate-y-1/2">
+                <span className="ui-kbd pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2">
                   ^K
                 </span>
               )}
             </div>
 
             {/* Right Controls */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-                className="ui-btn-ghost flex h-8 w-8 items-center justify-center rounded-[6px] cursor-pointer"
+                className="ui-btn-ghost flex h-9 w-9 items-center justify-center rounded-[7px] cursor-pointer"
                 title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
               >
-                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {theme === "dark" ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
               </button>
 
               <button
                 onClick={() => setShowSettingsModal(true)}
-                className="ui-btn-ghost flex h-8 items-center gap-1.5 rounded-[6px] px-2.5 text-[12.5px] font-medium cursor-pointer"
+                className="ui-btn-ghost flex h-9 items-center gap-2 rounded-[7px] px-3 text-[13.5px] font-medium cursor-pointer"
                 title="Preferences"
               >
-                <Settings className="h-4 w-4" />
+                <Settings className="h-[18px] w-[18px]" />
                 <span>Settings</span>
               </button>
             </div>
           </header>
 
-          {/* Revamped Precision Downloads List */}
+          {/* Precision Downloads List */}
           <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {/* Subtle View Context Header */}
             <div
-              className="flex h-[34px] shrink-0 items-center justify-between px-4 text-[11.5px]"
+              className="flex h-[38px] shrink-0 items-center justify-between px-5 text-[12.5px]"
               style={{
                 backgroundColor: "var(--bg-sidebar)",
                 borderBottom: "1px solid var(--border-subtle)",
@@ -485,7 +485,7 @@ export function App() {
                   {navItems.find((n) => n.id === filter)?.label}
                 </span>
                 <span
-                  className="rounded-[4px] px-1.5 py-[1px] font-mono text-[10.5px] tabular-nums"
+                  className="rounded-[5px] px-2 py-[1px] font-mono text-[11.5px] tabular-nums"
                   style={{
                     backgroundColor: "var(--bg-subtle)",
                     border: "1px solid var(--border-subtle)",
@@ -496,7 +496,7 @@ export function App() {
                 </span>
               </div>
               {filteredTasks.length > 0 && (
-                <span className="text-[11px] opacity-80">
+                <span className="text-[12px] opacity-80">
                   Double-click to open · Space to pause/resume
                 </span>
               )}
@@ -507,20 +507,20 @@ export function App() {
               {filteredTasks.length === 0 ? (
                 <div className="flex h-full flex-col items-center justify-center p-8 text-center">
                   <div
-                    className="flex h-11 w-11 items-center justify-center rounded-[8px]"
+                    className="flex h-12 w-12 items-center justify-center rounded-[10px]"
                     style={{
                       backgroundColor: "var(--bg-subtle)",
                       border: "1px solid var(--border-subtle)",
                       color: "var(--text-muted)",
                     }}
                   >
-                    <Download className="h-5 w-5" />
+                    <Download className="h-6 w-6" />
                   </div>
-                  <p className="mt-3.5 text-[13.5px] font-medium">
+                  <p className="mt-4 text-[15px] font-medium">
                     {searchQuery ? "No matching downloads" : "No downloads yet"}
                   </p>
                   <p
-                    className="mt-1.5 max-w-xs text-[12.5px] leading-relaxed"
+                    className="mt-1.5 max-w-sm text-[13.5px] leading-relaxed"
                     style={{ color: "var(--text-muted)" }}
                   >
                     {searchQuery
@@ -530,9 +530,9 @@ export function App() {
                   {!searchQuery && (
                     <button
                       onClick={() => setShowAddModal(true)}
-                      className="ui-btn-primary mt-4 flex h-8 items-center gap-1.5 rounded-[6px] px-3.5 text-[12.5px] font-medium cursor-pointer"
+                      className="ui-btn-primary mt-5 flex h-9 items-center gap-2 rounded-[7px] px-4 text-[13.5px] font-medium cursor-pointer"
                     >
-                      <Plus className="h-3.5 w-3.5" />
+                      <Plus className="h-4 w-4" />
                       Add Download
                     </button>
                   )}
@@ -566,7 +566,7 @@ export function App() {
 
       {/* Bottom Telemetry Status Bar */}
       <footer
-        className="flex h-[30px] shrink-0 items-center justify-between px-4 text-[11.5px]"
+        className="flex h-[34px] shrink-0 items-center justify-between px-5 text-[12.5px]"
         style={{
           backgroundColor: "var(--bg-sidebar)",
           borderTop: "1px solid var(--border-subtle)",
@@ -574,9 +574,9 @@ export function App() {
         }}
       >
         <div className="flex items-center gap-3">
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-2">
             <span
-              className="h-1.5 w-1.5 rounded-full"
+              className="h-2 w-2 rounded-full"
               style={{
                 backgroundColor: settings.bridgeEnabled
                   ? "var(--success)"
@@ -601,7 +601,7 @@ export function App() {
 
         <div className="flex items-center gap-2 font-mono tabular-nums">
           <Activity
-            className="h-3 w-3"
+            className="h-3.5 w-3.5"
             style={{ color: totalSpeedBps > 0 ? "var(--accent-text)" : "var(--text-muted)" }}
           />
           <span
@@ -640,20 +640,20 @@ export function App() {
         onSaved={(updated) => setSettings(updated)}
       />
 
-      {/* Compact Delete Confirmation Dialog */}
+      {/* Delete Confirmation Dialog */}
       {confirmDeleteTask && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4">
           <div
-            className="w-full max-w-sm overflow-hidden rounded-[8px]"
+            className="w-full max-w-md overflow-hidden rounded-[10px]"
             style={{
               backgroundColor: "var(--bg-elevated)",
               boxShadow: "var(--shadow-modal)",
             }}
           >
-            <div className="p-4">
-              <h3 className="text-[13px] font-semibold">Remove download</h3>
+            <div className="p-5">
+              <h3 className="text-[15px] font-semibold">Remove download</h3>
               <p
-                className="mt-1.5 break-all text-[12px] leading-relaxed"
+                className="mt-2 break-all text-[13.5px] leading-relaxed"
                 style={{ color: "var(--text-secondary)" }}
               >
                 {confirmDeleteTask.fileName}
@@ -661,7 +661,7 @@ export function App() {
 
               {confirmDeleteTask.status === "completed" && (
                 <label
-                  className="mt-3 flex cursor-pointer items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-[12px]"
+                  className="mt-3.5 flex cursor-pointer items-center gap-2.5 rounded-[7px] px-3 py-2.5 text-[13px]"
                   style={{
                     backgroundColor: "var(--bg-subtle)",
                     border: "1px solid var(--border-subtle)",
@@ -671,7 +671,7 @@ export function App() {
                     type="checkbox"
                     checked={deleteFromDisk}
                     onChange={(e) => setDeleteFromDisk(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-rose-500"
+                    className="h-4 w-4 accent-rose-500"
                   />
                   <span>Also delete file from disk</span>
                 </label>
@@ -679,7 +679,7 @@ export function App() {
             </div>
 
             <div
-              className="flex items-center justify-end gap-2 px-4 py-2.5"
+              className="flex items-center justify-end gap-2.5 px-5 py-3"
               style={{
                 backgroundColor: "var(--bg-sidebar)",
                 borderTop: "1px solid var(--border-subtle)",
@@ -688,7 +688,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => setConfirmDeleteTask(null)}
-                className="ui-btn-secondary h-7 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
+                className="ui-btn-secondary h-8.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
               >
                 Cancel
               </button>
@@ -700,7 +700,7 @@ export function App() {
                   setConfirmDeleteTask(null);
                   void handleRemove(target.id, fromDisk);
                 }}
-                className="ui-btn-danger h-7 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
+                className="ui-btn-danger h-8.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
               >
                 Remove
               </button>

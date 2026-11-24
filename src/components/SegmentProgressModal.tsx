@@ -91,7 +91,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4">
       <div
-        className="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-[8px]"
+        className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[10px]"
         style={{
           backgroundColor: "var(--bg-elevated)",
           boxShadow: "var(--shadow-modal)",
@@ -99,17 +99,17 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
       >
         {/* Header Bar */}
         <div
-          className="flex shrink-0 items-center justify-between gap-3 px-4 py-2.5"
+          className="flex shrink-0 items-center justify-between gap-3 px-5 py-3.5"
           style={{ borderBottom: "1px solid var(--border-subtle)" }}
         >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Zap className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--accent-text)" }} />
+          <div className="flex min-w-0 items-center gap-3">
+            <Zap className="h-4.5 w-4.5 shrink-0" style={{ color: "var(--accent-text)" }} />
             <div className="min-w-0">
-              <h2 className="truncate text-[13px] font-semibold leading-tight">
+              <h2 className="truncate text-[15px] font-semibold leading-tight">
                 {task.fileName}
               </h2>
               <p
-                className="truncate font-mono text-[10.5px] leading-tight mt-0.5"
+                className="truncate font-mono text-[12px] leading-tight mt-0.5"
                 style={{ color: "var(--text-muted)" }}
               >
                 {task.url}
@@ -118,14 +118,14 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
           </div>
           <button
             onClick={onClose}
-            className="ui-btn-ghost flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] cursor-pointer"
+            className="ui-btn-ghost flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] cursor-pointer"
             aria-label="Close"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* 4-Column Compact Telemetry Strip */}
+        {/* 4-Column Telemetry Strip */}
         <div
           className="grid shrink-0 grid-cols-4 divide-x"
           style={{
@@ -134,51 +134,51 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
             borderColor: "var(--border-subtle)",
           }}
         >
-          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          <div className="px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
               Speed
             </div>
             <div
-              className="mt-0.5 font-mono text-[14px] font-semibold tabular-nums"
+              className="mt-1 font-mono text-[15.5px] font-semibold tabular-nums"
               style={{ color: "var(--accent-text)" }}
             >
               {formatSpeed(task.speedBps)}
             </div>
           </div>
 
-          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          <div className="px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
               Transferred
             </div>
-            <div className="mt-0.5 font-mono text-[12px] font-medium tabular-nums">
+            <div className="mt-1 font-mono text-[13.5px] font-medium tabular-nums">
               {formatBytes(task.downloaded)}
               <span style={{ color: "var(--text-muted)" }}> / {formatBytes(task.totalSize)}</span>
             </div>
           </div>
 
-          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-[10px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+          <div className="px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
+            <div className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
               ETA
             </div>
-            <div className="mt-0.5 font-mono text-[13px] font-medium tabular-nums">
+            <div className="mt-1 font-mono text-[14.5px] font-medium tabular-nums">
               {task.status === "completed" ? "Done" : formatEta(task.etaSeconds)}
             </div>
           </div>
 
-          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+          <div className="px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
             <div
-              className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider"
+              className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider"
               style={{ color: "var(--text-muted)" }}
             >
-              <Split className="h-2.5 w-2.5" style={{ color: "var(--success)" }} />
+              <Split className="h-3 w-3" style={{ color: "var(--success)" }} />
               Splits
             </div>
             <div
-              className="mt-0.5 font-mono text-[13px] font-medium tabular-nums"
+              className="mt-1 font-mono text-[14.5px] font-medium tabular-nums"
               style={{ color: "var(--success)" }}
             >
               {task.dynamicSplits}{" "}
-              <span className="text-[11px] font-normal" style={{ color: "var(--text-muted)" }}>
+              <span className="text-[12px] font-normal" style={{ color: "var(--text-muted)" }}>
                 ({activeSegments} active)
               </span>
             </div>
@@ -186,16 +186,16 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
         </div>
 
         {/* Body */}
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        <div className="flex-1 space-y-3.5 overflow-y-auto p-5">
           {/* Overall Progress + Live Sparkline */}
           <div
-            className="rounded-[6px] p-3"
+            className="rounded-[8px] p-3.5"
             style={{
               backgroundColor: "var(--bg-subtle)",
               border: "1px solid var(--border-subtle)",
             }}
           >
-            <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
+            <div className="mb-2 flex items-center justify-between text-[13px]">
               <span className="font-medium">
                 Overall Progress{" "}
                 <span className="capitalize" style={{ color: "var(--text-muted)" }}>
@@ -210,7 +210,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
               </span>
             </div>
             <div
-              className="h-1.5 w-full overflow-hidden rounded-full"
+              className="h-2 w-full overflow-hidden rounded-full"
               style={{ backgroundColor: "var(--bg-active)" }}
             >
               <div
@@ -230,15 +230,15 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
             {speedHistory.length > 1 && (
               <div className="mt-3 flex items-center justify-between gap-4">
                 <div
-                  className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums"
+                  className="flex items-center gap-1.5 font-mono text-[12px] tabular-nums"
                   style={{ color: "var(--text-secondary)" }}
                 >
-                  <Activity className="h-3 w-3" style={{ color: "var(--accent-text)" }} />
+                  <Activity className="h-3.5 w-3.5" style={{ color: "var(--accent-text)" }} />
                   Peak <strong style={{ color: "var(--text-primary)" }}>{formatSpeed(maxSpeed)}</strong>
                 </div>
                 <svg
                   viewBox="0 0 300 40"
-                  className="h-9 w-56 overflow-visible"
+                  className="h-10 w-60 overflow-visible"
                   preserveAspectRatio="none"
                 >
                   <polygon
@@ -261,15 +261,15 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
           {/* Dynamic File Segmentation Map */}
           <div
-            className="rounded-[6px] p-3"
+            className="rounded-[8px] p-3.5"
             style={{
               backgroundColor: "var(--bg-subtle)",
               border: "1px solid var(--border-subtle)",
             }}
           >
-            <div className="mb-1.5 flex items-center justify-between text-[11.5px]">
+            <div className="mb-2 flex items-center justify-between text-[13px]">
               <span className="font-medium">Dynamic File Segmentation Map</span>
-              <span className="font-mono text-[11px]" style={{ color: "var(--text-muted)" }}>
+              <span className="font-mono text-[12px]" style={{ color: "var(--text-muted)" }}>
                 {task.supportsRange
                   ? `${task.segments.length} seg · work-stealing`
                   : "single-stream"}
@@ -278,7 +278,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
             {totalSize > 0 && task.segments.length > 0 ? (
               <div
-                className="relative h-5 w-full overflow-hidden rounded-[4px]"
+                className="relative h-6 w-full overflow-hidden rounded-[5px]"
                 style={{
                   backgroundColor: "var(--bg-input)",
                   border: "1px solid var(--border-subtle)",
@@ -316,7 +316,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
               </div>
             ) : (
               <div
-                className="flex h-5 items-center justify-center rounded-[4px] font-mono text-[11px]"
+                className="flex h-6 items-center justify-center rounded-[5px] font-mono text-[12px]"
                 style={{
                   backgroundColor: "var(--bg-input)",
                   border: "1px solid var(--border-subtle)",
@@ -330,16 +330,16 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
           {/* Per-Connection Table */}
           <div
-            className="overflow-hidden rounded-[6px]"
+            className="overflow-hidden rounded-[8px]"
             style={{
               backgroundColor: "var(--bg-subtle)",
               border: "1px solid var(--border-subtle)",
             }}
           >
-            <div className="max-h-48 overflow-y-auto">
-              <table className="w-full text-left text-[11.5px]">
+            <div className="max-h-56 overflow-y-auto">
+              <table className="w-full text-left text-[12.5px]">
                 <thead
-                  className="sticky top-0 text-[10px] uppercase tracking-wider"
+                  className="sticky top-0 text-[11px] uppercase tracking-wider"
                   style={{
                     backgroundColor: "var(--bg-sidebar)",
                     borderBottom: "1px solid var(--border-subtle)",
@@ -347,14 +347,14 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
                   }}
                 >
                   <tr>
-                    <th className="px-3 py-1.5 font-medium">Conn</th>
-                    <th className="px-2.5 py-1.5 font-medium">Status</th>
-                    <th className="px-2.5 py-1.5 font-medium">Downloaded</th>
-                    <th className="px-2.5 py-1.5 font-medium">Byte Range</th>
-                    <th className="px-3 py-1.5 text-right font-medium">Speed</th>
+                    <th className="px-3.5 py-2 font-medium">Conn</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 font-medium">Downloaded</th>
+                    <th className="px-3 py-2 font-medium">Byte Range</th>
+                    <th className="px-3.5 py-2 text-right font-medium">Speed</th>
                   </tr>
                 </thead>
-                <tbody className="font-mono text-[11px] tabular-nums">
+                <tbody className="font-mono text-[12px] tabular-nums">
                   {task.segments.map((seg) => {
                     const segLen =
                       seg.end >= seg.start && totalSize > 0 ? seg.end - seg.start + 1 : null;
@@ -363,17 +363,17 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
                         key={seg.id}
                         style={{ borderTop: "1px solid var(--border-subtle)" }}
                       >
-                        <td className="px-3 py-1.5" style={{ color: "var(--text-muted)" }}>
+                        <td className="px-3.5 py-2" style={{ color: "var(--text-muted)" }}>
                           #{seg.id}
                         </td>
                         <td
-                          className="px-2.5 py-1.5 font-sans text-[11.5px] font-medium capitalize"
+                          className="px-3 py-2 font-sans text-[12.5px] font-medium capitalize"
                           style={{ color: segmentColorVar(seg.status) }}
                         >
                           {seg.status}
                           {seg.retries > 0 ? ` (r${seg.retries})` : ""}
                         </td>
-                        <td className="px-2.5 py-1.5">
+                        <td className="px-3 py-2">
                           {formatBytes(seg.downloaded)}
                           {segLen !== null ? (
                             <span style={{ color: "var(--text-muted)" }}>
@@ -382,13 +382,13 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
                             </span>
                           ) : null}
                         </td>
-                        <td className="px-2.5 py-1.5" style={{ color: "var(--text-muted)" }}>
+                        <td className="px-3 py-2" style={{ color: "var(--text-muted)" }}>
                           {totalSize > 0
                             ? `${formatBytes(seg.start)} – ${formatBytes(seg.end)}`
                             : "stream"}
                         </td>
                         <td
-                          className="px-3 py-1.5 text-right font-medium"
+                          className="px-3.5 py-2 text-right font-medium"
                           style={{ color: "var(--accent-text)" }}
                         >
                           {formatSpeed(seg.speedBps)}
@@ -403,7 +403,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
           {task.errorMessage && (
             <div
-              className="rounded-[6px] px-3 py-2 text-[11.5px]"
+              className="rounded-[7px] px-3.5 py-2.5 text-[13px]"
               style={{
                 backgroundColor: "var(--danger-soft)",
                 border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)",
@@ -417,27 +417,27 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
         {/* Footer Action Bar */}
         <div
-          className="flex shrink-0 items-center justify-between px-4 py-2.5"
+          className="flex shrink-0 items-center justify-between px-5 py-3.5"
           style={{
             backgroundColor: "var(--bg-sidebar)",
             borderTop: "1px solid var(--border-subtle)",
           }}
         >
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {task.status === "downloading" ? (
               <button
                 onClick={() => void pauseDownload(task.id)}
-                className="ui-btn-secondary flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
+                className="ui-btn-secondary flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
               >
-                <Pause className="h-3 w-3" />
+                <Pause className="h-3.5 w-3.5" />
                 Pause
               </button>
             ) : task.status === "paused" || task.status === "error" ? (
               <button
                 onClick={() => void resumeDownload(task.id)}
-                className="ui-btn-primary flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
+                className="ui-btn-primary flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
               >
-                <Play className="h-3 w-3" />
+                <Play className="h-3.5 w-3.5" />
                 Resume
               </button>
             ) : null}
@@ -445,9 +445,9 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
             {(task.status === "downloading" || task.status === "paused") && (
               <button
                 onClick={() => void cancelDownload(task.id)}
-                className="ui-btn-danger flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
+                className="ui-btn-danger flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
               >
-                <Square className="h-3 w-3" />
+                <Square className="h-3.5 w-3.5" />
                 Cancel
               </button>
             )}
@@ -456,16 +456,16 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
               <>
                 <button
                   onClick={() => void openPath(task.fullPath, false)}
-                  className="ui-btn-primary flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
+                  className="ui-btn-primary flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
                 >
-                  <ExternalLink className="h-3 w-3" />
+                  <ExternalLink className="h-3.5 w-3.5" />
                   Open File
                 </button>
                 <button
                   onClick={() => void openPath(task.fullPath, true)}
-                  className="ui-btn-secondary flex h-7 items-center gap-1.5 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
+                  className="ui-btn-secondary flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
                 >
-                  <FolderOpen className="h-3 w-3" />
+                  <FolderOpen className="h-3.5 w-3.5" />
                   Show in Folder
                 </button>
               </>
@@ -474,7 +474,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
           <button
             onClick={onClose}
-            className="ui-btn-secondary h-7 rounded-[5px] px-3 text-[12px] font-medium cursor-pointer"
+            className="ui-btn-secondary h-8.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
           >
             Close
           </button>

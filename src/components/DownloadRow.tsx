@@ -162,12 +162,12 @@ export function DownloadRow({
           ? "Double-click to open file"
           : "Double-click to open save folder"
       }
-      className="ui-row group relative flex items-center gap-3.5 px-4 py-3 cursor-pointer"
+      className="ui-row group relative flex items-center gap-4 px-5 py-3.5 cursor-pointer"
     >
       {/* Left Selection / Active Accent Indicator (Linear-style) */}
       {(selected || isDownloading) && (
         <span
-          className="pointer-events-none absolute left-0 top-1.5 bottom-1.5 w-[2.5px] rounded-r-full"
+          className="pointer-events-none absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full"
           style={{
             backgroundColor: selected ? "var(--accent)" : "var(--accent-soft)",
           }}
@@ -179,31 +179,31 @@ export function DownloadRow({
         <img
           src={task.mediaThumbnail}
           alt=""
-          className="h-9 w-13 shrink-0 rounded-[6px] object-cover"
+          className="h-10 w-16 shrink-0 rounded-[6px] object-cover"
           style={{ border: "1px solid var(--border-subtle)" }}
         />
       ) : (
         <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[7px]"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px]"
           style={{
             backgroundColor: isError ? "var(--danger-soft)" : iconBg,
             color: isError ? "var(--danger)" : iconFg,
             border: "1px solid var(--border-subtle)",
           }}
         >
-          <FileIcon className="h-4 w-4" />
+          <FileIcon className="h-[18px] w-[18px]" />
         </div>
       )}
 
       {/* Center Content: Title + Rich Contextual Metadata */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="truncate text-[13px] font-medium tracking-[0.005em] leading-snug">
+          <span className="truncate text-[14px] font-medium tracking-[0.005em] leading-snug">
             {task.fileName}
           </span>
           {task.mediaQualityLabel && (
             <span
-              className="shrink-0 rounded-[4px] px-1.5 py-[1px] font-mono text-[10px] leading-tight"
+              className="shrink-0 rounded-[4px] px-1.5 py-[2px] font-mono text-[11px] leading-tight"
               style={{
                 backgroundColor: "var(--bg-subtle)",
                 border: "1px solid var(--border-subtle)",
@@ -217,7 +217,7 @@ export function DownloadRow({
 
         {/* Subtitle Metadata Line */}
         <div
-          className="mt-0.5 flex items-center gap-1.5 truncate text-[11.5px] leading-snug"
+          className="mt-0.5 flex items-center gap-1.5 truncate text-[12.5px] leading-snug"
           style={{ color: "var(--text-muted)" }}
         >
           {isError && task.errorMessage ? (
@@ -267,10 +267,10 @@ export function DownloadRow({
       </div>
 
       {/* Right Side: Progressive-Disclosure Action Pill + Clean Status/Percentage */}
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3.5">
         {/* Hover / Selected Floating Action Pill */}
         <div
-          className="ui-row-actions flex items-center gap-0.5 rounded-[6px] p-0.5"
+          className="ui-row-actions flex items-center gap-1 rounded-[7px] p-1"
           style={{
             backgroundColor: "var(--bg-elevated)",
             border: "1px solid var(--border-subtle)",
@@ -281,58 +281,58 @@ export function DownloadRow({
           {isDownloading ? (
             <button
               onClick={onPause}
-              className="ui-btn-ghost flex h-6 w-6 items-center justify-center rounded-[4px] cursor-pointer"
+              className="ui-btn-ghost flex h-7 w-7 items-center justify-center rounded-[5px] cursor-pointer"
               title="Pause (Space)"
             >
-              <Pause className="h-3.5 w-3.5" />
+              <Pause className="h-4 w-4" />
             </button>
           ) : task.status === "paused" || isError ? (
             <button
               onClick={onResume}
-              className="ui-btn-ghost flex h-6 w-6 items-center justify-center rounded-[4px] cursor-pointer"
+              className="ui-btn-ghost flex h-7 w-7 items-center justify-center rounded-[5px] cursor-pointer"
               style={{ color: "var(--accent-text)" }}
               title="Resume (Space)"
             >
-              <Play className="h-3.5 w-3.5" />
+              <Play className="h-4 w-4" />
             </button>
           ) : isCompleted ? (
             <button
               onClick={onOpenFolder}
-              className="ui-btn-ghost flex h-6 w-6 items-center justify-center rounded-[4px] cursor-pointer"
+              className="ui-btn-ghost flex h-7 w-7 items-center justify-center rounded-[5px] cursor-pointer"
               style={{ color: "var(--accent-text)" }}
               title="Show in folder"
             >
-              <FolderOpen className="h-3.5 w-3.5" />
+              <FolderOpen className="h-4 w-4" />
             </button>
           ) : null}
 
           <button
             onClick={onInspect}
-            className="ui-btn-ghost flex h-6 w-6 items-center justify-center rounded-[4px] cursor-pointer"
+            className="ui-btn-ghost flex h-7 w-7 items-center justify-center rounded-[5px] cursor-pointer"
             title="Inspect segments & throughput"
           >
-            <BarChart3 className="h-3.5 w-3.5" />
+            <BarChart3 className="h-4 w-4" />
           </button>
 
           <button
             onClick={onRequestDelete}
-            className="ui-btn-ghost ui-action-danger flex h-6 w-6 items-center justify-center rounded-[4px] cursor-pointer"
+            className="ui-btn-ghost ui-action-danger flex h-7 w-7 items-center justify-center rounded-[5px] cursor-pointer"
             title="Remove"
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" />
           </button>
         </div>
 
         {/* Status / Percentage Indicator */}
-        <div className="flex min-w-[78px] items-center justify-end gap-1.5 text-[12px] font-medium">
+        <div className="flex min-w-[88px] items-center justify-end gap-2 text-[13px] font-medium">
           {isDownloading ? (
             <>
               <span
-                className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full"
+                className="h-2 w-2 shrink-0 animate-pulse rounded-full"
                 style={{ backgroundColor: "var(--accent)" }}
               />
               <span
-                className="font-mono text-[12.5px] font-semibold tabular-nums"
+                className="font-mono text-[13.5px] font-semibold tabular-nums"
                 style={{ color: "var(--accent-text)" }}
               >
                 {pct.toFixed(1)}%
@@ -341,7 +341,7 @@ export function DownloadRow({
           ) : isCompleted ? (
             <>
               <CheckCircle2
-                className="h-3.5 w-3.5 shrink-0"
+                className="h-4 w-4 shrink-0"
                 style={{ color: "var(--success)" }}
               />
               <span style={{ color: "var(--text-secondary)" }}>Done</span>
@@ -349,7 +349,7 @@ export function DownloadRow({
           ) : (
             <>
               <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                className="h-2 w-2 shrink-0 rounded-full"
                 style={{ backgroundColor: statusMeta.dot }}
               />
               <span style={{ color: statusMeta.text }}>{statusMeta.label}</span>

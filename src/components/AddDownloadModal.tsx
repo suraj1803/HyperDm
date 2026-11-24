@@ -239,7 +239,7 @@ export function AddDownloadModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4">
       <div
-        className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-[8px]"
+        className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[10px]"
         style={{
           backgroundColor: "var(--bg-elevated)",
           boxShadow: "var(--shadow-modal)",
@@ -247,17 +247,17 @@ export function AddDownloadModal({
       >
         {/* Header Bar */}
         <div
-          className="flex h-[48px] shrink-0 items-center justify-between px-5"
+          className="flex h-[54px] shrink-0 items-center justify-between px-5"
           style={{ borderBottom: "1px solid var(--border-subtle)" }}
         >
-          <div className="flex items-center gap-2">
-            <Zap className="h-4 w-4" style={{ color: "var(--accent-text)" }} />
-            <h2 className="text-[13.5px] font-semibold tracking-tight">New Download</h2>
+          <div className="flex items-center gap-2.5">
+            <Zap className="h-4.5 w-4.5" style={{ color: "var(--accent-text)" }} />
+            <h2 className="text-[15px] font-semibold tracking-tight">New Download</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="ui-btn-ghost flex h-7 w-7 items-center justify-center rounded-[5px] cursor-pointer"
+            className="ui-btn-ghost flex h-8 w-8 items-center justify-center rounded-[6px] cursor-pointer"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -269,7 +269,7 @@ export function AddDownloadModal({
             {/* URL Input */}
             <div>
               <label
-                className="mb-1 block text-[11px] font-medium"
+                className="mb-1.5 block text-[12.5px] font-medium"
                 style={{ color: "var(--text-secondary)" }}
               >
                 URL (Direct file or YouTube)
@@ -277,7 +277,7 @@ export function AddDownloadModal({
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <Globe
-                    className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
                     style={{ color: "var(--text-muted)" }}
                   />
                   <input
@@ -292,16 +292,16 @@ export function AddDownloadModal({
                       }
                     }}
                     placeholder="https://youtube.com/watch?v=... or file URL"
-                    className="ui-input h-8 w-full rounded-[6px] pl-8 pr-2.5 text-[12px]"
+                    className="ui-input h-9.5 w-full rounded-[7px] pl-9.5 pr-3 text-[13.5px]"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={() => void runProbe(url)}
                   disabled={probing || !url.trim()}
-                  className="ui-btn-secondary flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12px] font-medium cursor-pointer"
+                  className="ui-btn-secondary flex h-9.5 items-center gap-1.5 rounded-[7px] px-3.5 text-[13px] font-medium cursor-pointer"
                 >
-                  {probing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
                   Probe
                 </button>
               </div>
@@ -309,14 +309,14 @@ export function AddDownloadModal({
 
             {probingYouTube && (
               <div
-                className="flex items-center gap-2.5 rounded-[6px] px-3 py-2 text-[11.5px]"
+                className="flex items-center gap-2.5 rounded-[7px] px-3.5 py-2.5 text-[13px]"
                 style={{
                   backgroundColor: "var(--bg-subtle)",
                   border: "1px solid var(--border-subtle)",
                 }}
               >
                 <Loader2
-                  className="h-3.5 w-3.5 shrink-0 animate-spin"
+                  className="h-4 w-4 shrink-0 animate-spin"
                   style={{ color: "var(--accent-text)" }}
                 />
                 <span style={{ color: "var(--text-secondary)" }}>
@@ -328,26 +328,26 @@ export function AddDownloadModal({
             {/* YouTube Preview & Quality Picker */}
             {ytProbe && (
               <div
-                className="space-y-2.5 rounded-[6px] p-2.5"
+                className="space-y-3 rounded-[8px] p-3.5"
                 style={{
                   backgroundColor: "var(--bg-subtle)",
                   border: "1px solid var(--border-subtle)",
                 }}
               >
-                <div className="flex gap-2.5">
+                <div className="flex gap-3">
                   {ytProbe.thumbnail && (
                     <img
                       src={ytProbe.thumbnail}
                       alt={ytProbe.title}
-                      className="h-14 w-24 shrink-0 rounded-[4px] object-cover"
+                      className="h-16 w-28 shrink-0 rounded-[5px] object-cover"
                     />
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="line-clamp-2 text-[12px] font-medium leading-snug">
+                    <div className="line-clamp-2 text-[13.5px] font-medium leading-snug">
                       {ytProbe.title}
                     </div>
                     <div
-                      className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]"
+                      className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px]"
                       style={{ color: "var(--text-muted)" }}
                     >
                       {ytProbe.uploader && <span>{ytProbe.uploader}</span>}
@@ -363,12 +363,12 @@ export function AddDownloadModal({
 
                 <div>
                   <div
-                    className="mb-1 text-[10px] font-medium uppercase tracking-wider"
+                    className="mb-1.5 text-[11px] font-medium uppercase tracking-wider"
                     style={{ color: "var(--text-muted)" }}
                   >
                     Quality
                   </div>
-                  <div className="max-h-40 space-y-1 overflow-y-auto pr-0.5">
+                  <div className="max-h-44 space-y-1.5 overflow-y-auto pr-0.5">
                     {ytProbe.formats.map((fmt) => {
                       const active = fmt.id === selectedFormatId;
                       const disabled = fmt.needsMux && !ytProbe.ffmpegAvailable;
@@ -381,7 +381,7 @@ export function AddDownloadModal({
                             setSelectedFormatId(fmt.id);
                             setFileName(buildYouTubeFileName(ytProbe.title, fmt));
                           }}
-                          className="flex w-full items-center justify-between rounded-[5px] px-2.5 py-1.5 text-left text-[11.5px] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[13px] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           style={{
                             backgroundColor: active ? "var(--accent-soft)" : "var(--bg-input)",
                             border: active
@@ -392,20 +392,20 @@ export function AddDownloadModal({
                         >
                           <span className="flex items-center gap-2 font-medium">
                             {fmt.isAudioOnly ? (
-                              <Music className="h-3 w-3" />
+                              <Music className="h-3.5 w-3.5" />
                             ) : (
-                              <Film className="h-3 w-3" />
+                              <Film className="h-3.5 w-3.5" />
                             )}
                             <span>{fmt.label}</span>
                             {disabled && (
-                              <span className="text-[10px] opacity-75">(requires ffmpeg)</span>
+                              <span className="text-[11px] opacity-75">(requires ffmpeg)</span>
                             )}
                           </span>
-                          <span className="flex items-center gap-2 font-mono text-[11px] tabular-nums">
+                          <span className="flex items-center gap-2 font-mono text-[12px] tabular-nums">
                             <span style={{ color: "var(--text-secondary)" }}>
                               {fmt.approxSizeBytes ? `~${formatBytes(fmt.approxSizeBytes)}` : "—"}
                             </span>
-                            {active && <Check className="h-3 w-3" />}
+                            {active && <Check className="h-3.5 w-3.5" />}
                           </span>
                         </button>
                       );
@@ -418,7 +418,7 @@ export function AddDownloadModal({
             {/* Direct File Probe Info */}
             {probe && !ytProbe && (
               <div
-                className="flex flex-wrap items-center justify-between gap-2 rounded-[6px] px-3 py-2 text-[11.5px]"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-[7px] px-3.5 py-2.5 text-[12.5px]"
                 style={{
                   backgroundColor: "var(--bg-subtle)",
                   border: "1px solid var(--border-subtle)",
@@ -429,31 +429,31 @@ export function AddDownloadModal({
                     Size: <strong style={{ color: "var(--text-primary)" }}>{formatBytes(probe.totalSize)}</strong>
                   </span>
                   {probe.contentType && (
-                    <span className="truncate max-w-[160px]" style={{ color: "var(--text-muted)" }}>
+                    <span className="truncate max-w-[180px]" style={{ color: "var(--text-muted)" }}>
                       {probe.contentType.split(";")[0]}
                     </span>
                   )}
                 </div>
                 {probe.supportsRange ? (
                   <span
-                    className="inline-flex items-center gap-1 rounded-[4px] px-2 py-0.5 text-[11px] font-medium"
+                    className="inline-flex items-center gap-1.5 rounded-[5px] px-2.5 py-0.5 text-[12px] font-medium"
                     style={{
                       backgroundColor: "var(--success-soft)",
                       color: "var(--success)",
                     }}
                   >
-                    <Sparkles className="h-3 w-3" />
+                    <Sparkles className="h-3.5 w-3.5" />
                     Multi-Segment Ready
                   </span>
                 ) : (
                   <span
-                    className="inline-flex items-center gap-1 rounded-[4px] px-2 py-0.5 text-[11px] font-medium"
+                    className="inline-flex items-center gap-1.5 rounded-[5px] px-2.5 py-0.5 text-[12px] font-medium"
                     style={{
                       backgroundColor: "var(--warning-soft)",
                       color: "var(--warning)",
                     }}
                   >
-                    <ShieldAlert className="h-3 w-3" />
+                    <ShieldAlert className="h-3.5 w-3.5" />
                     Single Stream
                   </span>
                 )}
@@ -461,10 +461,10 @@ export function AddDownloadModal({
             )}
 
             {/* Filename & Connections */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <div>
                 <label
-                  className="mb-1 block text-[11px] font-medium"
+                  className="mb-1.5 block text-[12.5px] font-medium"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   File Name
@@ -474,25 +474,25 @@ export function AddDownloadModal({
                   value={fileName}
                   onChange={(e) => setFileName(e.target.value)}
                   placeholder="Auto-detected from server"
-                  className="ui-input h-8 w-full rounded-[6px] px-2.5 text-[12px]"
+                  className="ui-input h-9.5 w-full rounded-[7px] px-3 text-[13.5px]"
                 />
               </div>
 
               <div>
                 <label
-                  className="mb-1 flex items-center justify-between text-[11px] font-medium"
+                  className="mb-1.5 flex items-center justify-between text-[12.5px] font-medium"
                   style={{ color: "var(--text-secondary)" }}
                 >
                   <span>Max Connections</span>
                   <span
-                    className="font-mono text-[11px] font-semibold tabular-nums"
+                    className="font-mono text-[12.5px] font-semibold tabular-nums"
                     style={{ color: "var(--accent-text)" }}
                   >
                     {maxConnections}
                   </span>
                 </label>
                 <div
-                  className="flex h-8 items-center rounded-[6px] px-2.5"
+                  className="flex h-9.5 items-center rounded-[7px] px-3"
                   style={{
                     backgroundColor: "var(--bg-subtle)",
                     border: "1px solid var(--border-subtle)",
@@ -513,7 +513,7 @@ export function AddDownloadModal({
             {/* Save Directory */}
             <div>
               <label
-                className="mb-1 block text-[11px] font-medium"
+                className="mb-1.5 block text-[12.5px] font-medium"
                 style={{ color: "var(--text-secondary)" }}
               >
                 Save Folder
@@ -523,14 +523,14 @@ export function AddDownloadModal({
                   type="text"
                   value={saveDir}
                   onChange={(e) => setSaveDir(e.target.value)}
-                  className="ui-input h-8 flex-1 rounded-[6px] px-2.5 font-mono text-[11.5px]"
+                  className="ui-input h-9.5 flex-1 rounded-[7px] px-3 font-mono text-[12.5px]"
                 />
                 <button
                   type="button"
                   onClick={handleBrowse}
-                  className="ui-btn-secondary flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12px] font-medium cursor-pointer"
+                  className="ui-btn-secondary flex h-9.5 items-center gap-1.5 rounded-[7px] px-3.5 text-[13px] font-medium cursor-pointer"
                 >
-                  <FolderOpen className="h-3.5 w-3.5" />
+                  <FolderOpen className="h-4 w-4" />
                   Browse
                 </button>
               </div>
@@ -538,7 +538,7 @@ export function AddDownloadModal({
 
             {error && (
               <div
-                className="rounded-[6px] px-3 py-2 text-[11.5px]"
+                className="rounded-[7px] px-3.5 py-2.5 text-[13px]"
                 style={{
                   backgroundColor: "var(--danger-soft)",
                   border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)",
@@ -552,7 +552,7 @@ export function AddDownloadModal({
 
           {/* Footer Bar */}
           <div
-            className="flex shrink-0 items-center justify-end gap-2 px-5 py-3"
+            className="flex shrink-0 items-center justify-end gap-2.5 px-5 py-3.5"
             style={{
               backgroundColor: "var(--bg-sidebar)",
               borderTop: "1px solid var(--border-subtle)",
@@ -561,19 +561,19 @@ export function AddDownloadModal({
             <button
               type="button"
               onClick={onClose}
-              className="ui-btn-secondary h-8 rounded-[6px] px-3.5 text-[12.5px] font-medium cursor-pointer"
+              className="ui-btn-secondary h-9 rounded-[7px] px-4 text-[13.5px] font-medium cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || probing || !url.trim()}
-              className="ui-btn-primary flex h-8 items-center gap-1.5 rounded-[6px] px-4 text-[12.5px] font-medium cursor-pointer"
+              className="ui-btn-primary flex h-9 items-center gap-2 rounded-[7px] px-4 text-[13.5px] font-medium cursor-pointer"
             >
               {submitting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Zap className="h-3.5 w-3.5" />
+                <Zap className="h-4 w-4" />
               )}
               {ytProbe ? "Download Video" : "Start Download"}
             </button>

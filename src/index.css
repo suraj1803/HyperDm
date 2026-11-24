@@ -96,7 +96,8 @@
     background-color: var(--bg-app);
     color: var(--text-primary);
     font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, ui-sans-serif, sans-serif;
-    font-size: 13px;
+    font-size: 14px;
+    line-height: 1.45;
     -webkit-font-smoothing: antialiased;
   }
 }
@@ -222,10 +223,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
-  height: 17px;
-  min-width: 17px;
-  font-size: 10px;
+  padding: 0 5px;
+  height: 20px;
+  min-width: 20px;
+  font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   line-height: 1;
   border-radius: 4px;
@@ -234,11 +235,11 @@
   color: var(--text-muted);
 }
 
-/* Compact Range Slider */
+/* Range Slider */
 input[type="range"].ui-slider {
   -webkit-appearance: none;
   appearance: none;
-  height: 4px;
+  height: 5px;
   border-radius: 9999px;
   background: var(--border-strong);
   outline: none;
@@ -246,8 +247,8 @@ input[type="range"].ui-slider {
 input[type="range"].ui-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 13px;
-  height: 13px;
+  width: 15px;
+  height: 15px;
   border-radius: 9999px;
   background: var(--accent);
   border: 2px solid var(--bg-elevated);
@@ -259,13 +260,13 @@ input[type="range"].ui-slider::-webkit-slider-thumb:hover {
   transform: scale(1.12);
 }
 
-/* Compact Toggle Switch */
+/* Toggle Switch */
 .ui-switch {
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 32px;
-  height: 18px;
+  width: 38px;
+  height: 22px;
   border-radius: 9999px;
   border: 1px solid var(--border-strong);
   background-color: var(--bg-subtle);
@@ -279,8 +280,8 @@ input[type="range"].ui-slider::-webkit-slider-thumb:hover {
   border-color: var(--accent);
 }
 .ui-switch-thumb {
-  width: 12px;
-  height: 12px;
+  width: 16px;
+  height: 16px;
   border-radius: 9999px;
   background-color: var(--text-secondary);
   transform: translateX(2px);
@@ -288,7 +289,7 @@ input[type="range"].ui-slider::-webkit-slider-thumb:hover {
 }
 .ui-switch[data-checked="true"] .ui-switch-thumb {
   background-color: var(--accent-fg);
-  transform: translateX(16px);
+  transform: translateX(18px);
 }
 
 /* Crisp Thin Scrollbar */
