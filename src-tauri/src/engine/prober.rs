@@ -31,7 +31,11 @@ pub fn build_header_map(custom: &HashMap<String, String>) -> HeaderMap {
 
 pub fn build_http_client() -> Result<Client, DownloadError> {
     Client::builder()
-        .user_agent("HyperDM/0.1.0 (High-Speed Download Manager)")
+        .user_agent(concat!(
+            "HyperDM/",
+            env!("CARGO_PKG_VERSION"),
+            " (High-Speed Download Manager)"
+        ))
         // Force HTTP/1.1 so each parallel worker opens its own dedicated TCP socket
         // instead of multiplexing all segments over a single HTTP/2 connection.
         .http1_only()

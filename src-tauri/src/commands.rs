@@ -101,7 +101,7 @@ pub fn get_settings(manager: State<'_, DownloadManager>) -> AppSettings {
 }
 
 #[tauri::command]
-pub fn update_settings(
+pub async fn update_settings(
     manager: State<'_, DownloadManager>,
     settings: AppSettings,
 ) -> Result<AppSettings, DownloadError> {

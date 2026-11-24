@@ -116,6 +116,9 @@ impl DownloadManager {
 
         self.store.save_settings(&settings)?;
         self.state.write().unwrap().settings = settings.clone();
+        if tokio::runtime::Handle::try_current().is_ok() {
+            self.schedule_next_queued();
+        }
         Ok(settings)
     }
 

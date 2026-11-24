@@ -12,8 +12,8 @@ Everything you need to know about how **HyperDM** works under the hood, why each
 |---|---|---|
 | **Core Download Engine** | **Rust** (`tokio`, `reqwest`, `serde`) | Native speed, low memory, rock-solid concurrency, zero GC pauses during high-speed disk/network I/O. |
 | **Desktop Shell** | **Tauri v2** (`tray-icon`, `dialog`) | Tiny binary (~5–10 MB vs ~150 MB Electron), native OS webview, direct Rust IPC, native system tray. |
-| **Frontend UI** | **React 19 + TypeScript + Tailwind CSS v4** | Fast component UI styled with **Google Material Design 3 (Material You)** CSS tokens (Light & Dark themes). |
-| **Browser Integration** | **Manifest V3 Extension** + Loopback HTTP Bridge | Works on Chrome, Brave, Edge, Vivaldi, Opera, and Firefox; passes cookies/referer/UA + injects a floating YouTube button. |
+| **Frontend UI** | **React 19 + TypeScript + Tailwind CSS v4** | Fast component UI styled with a **Linear/Raycast-inspired precision design system** (Dark & Light CSS token themes). |
+| **Browser Integration** | **Manifest V3 Extension** + Loopback HTTP Bridge | Works on Chrome, Brave, Edge, Vivaldi, Opera, and Firefox; passes cookies/referer/UA + injects an auto-hiding YouTube download button. |
 | **YouTube Support** | **Hybrid (`yt-dlp` + HyperDM Engine + `ffmpeg`)** | Reliable extraction via auto-downloaded `yt-dlp`, full multi-segment speed via HyperDM, lossless remuxing via auto-downloaded `ffmpeg`. |
 
 ---
@@ -24,16 +24,17 @@ Everything you need to know about how **HyperDM** works under the hood, why each
 flowchart TB
     subgraph Browser["Browser (Chrome / Brave / Edge / Firefox)"]
         ExtBG["background.js (Download Interceptor & Context Menu)"]
-        ExtYT["youtube-content.js (Floating YouTube Pill)"]
+        ExtYT["youtube-content.js (YouTube Watch & Shorts Download Button)"]
         ExtPop["popup.html / popup.js (Status & Controls)"]
     end
 
     subgraph Desktop["HyperDM Desktop App (Tauri v2)"]
-        subgraph UI["React + Material Design 3 UI"]
-            App["App.tsx (Drawer, Search, List, Themes)"]
+        subgraph UI["React + Precision Design System UI"]
+            App["App.tsx (Sidebar, Search, Keyboard Nav, Themes)"]
+            Row["DownloadRow.tsx (Row Metadata & Hover Actions)"]
             AddModal["AddDownloadModal.tsx (URL Probe + YouTube Quality Picker)"]
             SegModal["SegmentProgressModal.tsx (Live Segment Map + Sparkline)"]
-            SetModal["SettingsModal.tsx (Engine, Bridge, Tray, Media Tools)"]
+            SetModal["SettingsModal.tsx (Engine, Concurrency, Bridge, Tray, Media Tools)"]
         end
 
         subgraph Rust["Rust Core (src-tauri/src/)"]
@@ -70,34 +71,35 @@ flowchart TB
 ## 3. Repository File Map
 
 ```text
-idm-clone/
+HyperDm/
 ├── .github/workflows/
 │   └── release.yml                  # Automated Windows (.exe/.msi) + Linux (.AppImage/.deb/.rpm) + Extension ZIP releases
 ├── browser-extension/
 │   ├── manifest.json                # Manifest V3 (Chrome/Brave/Edge/Firefox compatible)
 │   ├── background.js                # Intercepts downloads, fetches cookies, right-click menu, talks to 127.0.0.1:41920
-│   ├── youtube-content.js           # Injects floating "Download with HyperDM" pill on YouTube watch & Shorts pages
-│   ├── popup.html / popup.js        # Material 3 extension popup (Connected/Offline status, toggle, port, quick send)
+│   ├── youtube-content.js           # Injects auto-hiding download button on YouTube Watch & Shorts players
+│   ├── popup.html / popup.js        # Extension popup (Connected/Offline status, toggle, port, quick send)
 │   └── icons/icon128.png
 ├── src/                             # React + TypeScript Frontend
-│   ├── index.css                    # Material Design 3 (M3) CSS custom properties (Dark + Light themes, switches, sliders)
+│   ├── index.css                    # Precision Design System CSS custom properties (Dark + Light themes, switches, sliders)
 │   ├── main.tsx                     # React entrypoint
-│   ├── App.tsx                      # M3 Navigation Drawer, Extended FAB, Search Bar, Download List, Event Listeners
+│   ├── App.tsx                      # Slim Sidebar, Search Bar, Keyboard Navigation, Download List, Event Listeners
 │   ├── api/tauri.ts                 # Typed wrappers for Tauri invoke() and listen()
 │   ├── types/download.ts            # TypeScript interfaces mirroring Rust models
 │   ├── utils/format.ts              # formatBytes, formatSpeed, formatEta, progressPercent
 │   └── components/
+│       ├── DownloadRow.tsx          # Download list row with file-type/thumbnail visual, metadata, hover action pill
 │       ├── AddDownloadModal.tsx     # Direct URL probe + YouTube thumbnail/title/quality picker
 │       ├── SegmentProgressModal.tsx # Live multi-segment visualizer bar, speed sparkline, per-connection table
-│       └── SettingsModal.tsx        # Default folder, connections, split size, bridge, tray, yt-dlp/ffmpeg installers
+│       └── SettingsModal.tsx        # Default folder, connections, split size, concurrency, bridge, tray, yt-dlp/ffmpeg installers
 └── src-tauri/                       # Rust Backend & Tauri Shell
-    ├── Cargo.toml                   # Rust dependencies (tauri + tray-icon, tokio, reqwest, serde, uuid, etc.)
+    ├── Cargo.toml                   # Rust dependencies (tauri + tray-icon, single-instance, tokio, reqwest, serde, uuid, etc.)
     ├── tauri.conf.json              # Window config, bundle targets, cross-platform icons
     ├── capabilities/default.json    # Tauri v2 window permissions (dialog:allow-open, core:default)
     ├── icons/                       # Full icon set (.ico, .icns, PNGs, Store logos)
     └── src/
         ├── main.rs                  # Binary entrypoint
-        ├── lib.rs                   # Tauri setup: DownloadManager, HTTP bridge, System Tray, close-to-tray
+        ├── lib.rs                   # Tauri setup: DownloadManager, HTTP bridge, System Tray, single-instance, close-to-tray
         ├── commands.rs              # All #[tauri::command] IPC endpoints
         └── engine/
             ├── mod.rs               # Module declarations
@@ -105,12 +107,12 @@ idm-clone/
             ├── prober.rs            # HTTP/1.1 client builder, HEAD + Range 0-0 probing, filename extraction
             ├── segment.rs           # LiveSegment & race-free dynamic work-stealing bisection
             ├── worker.rs            # Parallel range workers, 8 MiB googlevideo sub-ranging, cross-platform positioned I/O
-            ├── coordinator.rs       # Orchestrates workers, telemetry ticks, companion audio download & ffmpeg muxing
-            ├── manager.rs           # Global registry, ActiveRun pause/resume synchronization, persistence triggers
+            ├── coordinator.rs       # Orchestrates workers, telemetry ticks, parallel companion audio download & ffmpeg muxing
+            ├── manager.rs           # Global registry, queue enforcement, ActiveRun pause/resume sync, URL refresh, persistence
             ├── persistence.rs       # Atomic JSON read/write for downloads.json & settings.json
-            ├── bridge.rs            # Loopback HTTP server (127.0.0.1:41920) for browser extension
-            ├── youtube.rs           # YouTube URL detection, auto-managed yt-dlp & ffmpeg, format pairing, ffmpeg remux
-            └── tests.rs             # 8 automated unit & integration tests (with in-process HTTP test server + ffprobe)
+            ├── bridge.rs            # Loopback HTTP server (127.0.0.1:41920) with strict Origin validation
+            ├── youtube.rs           # YouTube URL detection, auto-managed yt-dlp & ffmpeg, language-aware format pairing, ffmpeg remux
+            └── tests.rs             # 10 automated unit & integration tests (with in-process HTTP test server + ffprobe)
 ```
 
 ---
@@ -177,9 +179,10 @@ During development we fixed three real-world speed bottlenecks worth remembering
 - Closing the main window hides HyperDM to the tray by default (configurable in Settings) so active downloads and the browser extension bridge stay alive.
 - *(Note on Arch Linux)*: You may see a harmless GLib stderr notice `libayatana-appindicator is deprecated`—that comes from Tauri v2's upstream `tray-icon` crate and does not affect functionality.
 
-### H. Material Design 3 UI
-- Defined in `src/index.css` using Google's M3 color role tokens (`--md-surface`, `--md-surface-container-low/high/highest`, `--md-primary`, `--md-secondary-container`, `--md-tertiary-container`, etc.).
-- Supports both **Dark** (default) and **Light** (`[data-theme="light"]`) themes toggled from the Top App Bar and persisted in `localStorage`.
+### H. Precision Desktop UI (Linear / Raycast Inspired)
+- Defined in `src/index.css` using semantic CSS custom properties (`--bg-app`, `--bg-sidebar`, `--bg-elevated`, `--bg-subtle`, `--accent`, `--border-subtle`, etc.).
+- Supports both **Dark** (default) and **Light** (`[data-theme="light"]`) themes toggled from the top toolbar and persisted in `localStorage`.
+- Includes full keyboard navigation (`Ctrl+N` new download, `Ctrl+K` search, `↑`/`↓` row selection, `Space` pause/resume, `Enter` open/inspect, `Escape` close).
 
 ---
 
@@ -196,7 +199,7 @@ npm run tauri dev
 
 ### Testing & Building
 ```bash
-# Run all 8 Rust unit & integration tests (work-stealing, pause/resume, retry, bridge, ffmpeg mux)
+# Run all 10 Rust unit & integration tests (work-stealing, pause/resume, retry, bridge, queue, YouTube, ffmpeg mux)
 cd src-tauri && cargo test -- --nocapture
 
 # Typecheck and build React frontend
@@ -212,30 +215,18 @@ npm run tauri build
 
 ---
 
-## 6. Git Branches & Automated Releases
+## 6. Automated Releases
 
-### Current Branches
-| Branch | What's On It |
-|---|---|
-| `main` | Core engine, Material 3 UI, browser extension, system tray, Windows/Linux GitHub Actions workflow (`v0.1.0`). |
-| `feat/material-ui-revamp` | Original branch where the Material 3 UI revamp was developed (already merged into `main`). |
-| `feat/youtube` *(current)* | YouTube downloading (auto-managed `yt-dlp` & `ffmpeg`, quality picker, floating YouTube pill, HTTP/1.1 multi-TCP speed boost, 8 MiB `googlevideo` sub-ranging, audio retries). |
-
-### Merging `feat/youtube` & Publishing Release `v0.2.0`
-Whenever you're ready to ship YouTube support + the speed optimizations for Windows & Linux:
-```bash
-git checkout main
-git merge feat/youtube
-git push origin main
-
-git tag v0.2.0
-git push origin v0.2.0
-```
-Pushing any `v*` tag automatically triggers `.github/workflows/release.yml` on GitHub Actions, which:
+Pushing any `v*` tag on `main` (e.g. `v1.0.0`) automatically triggers `.github/workflows/release.yml` on GitHub Actions, which:
 1. Runs `cargo test` on both `windows-latest` and `ubuntu-22.04`.
 2. Builds Windows (`.exe` NSIS + `.msi`) and Linux (`.AppImage` + `.deb` + `.rpm`) installers via `tauri-apps/tauri-action`.
 3. Zips `browser-extension/` into `hyperdm-browser-extension.zip`.
 4. Publishes all assets to a GitHub Release on `https://github.com/suraj1803/HyperDm/releases`.
+
+```bash
+git tag v1.0.1
+git push origin v1.0.1
+```
 
 ---
 
@@ -256,7 +247,7 @@ Inside that folder:
 
 If you want to keep building on HyperDM later, the architecture is already structured to add these cleanly:
 1. **Global & Per-Download Speed Limiter**: Add a shared `tokio` token-bucket rate limiter inside `worker.rs` before `stream.next()`.
-2. **Download Queue & Scheduler**: Enforce `settings.max_concurrent_downloads` in `manager.rs` (currently stored in settings, ready to be enforced for queued downloads).
+2. **Scheduled Downloads**: Add start/stop time windows on queued tasks in `manager.rs`.
 3. **YouTube Playlists & Subtitles**: Extend `youtube.rs` with `--flat-playlist` JSON parsing and batch `add_download` calls.
 4. **File Categories & Auto-Sorting**: Route `.mp4` → `Downloads/Videos`, `.zip` → `Downloads/Archives`, `.pdf` → `Downloads/Documents`, etc.
 5. **Checksum Verification**: Compute SHA-256 / MD5 of completed files in the Segment Progress Modal.

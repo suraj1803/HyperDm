@@ -25,6 +25,9 @@ export function SettingsModal({
   const [defaultSaveDir, setDefaultSaveDir] = useState(settings.defaultSaveDir);
   const [maxConnections, setMaxConnections] = useState(settings.maxConnectionsPerDownload);
   const [minSplitKb, setMinSplitKb] = useState(Math.round(settings.minSplitSizeBytes / 1024));
+  const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(
+    settings.maxConcurrentDownloads
+  );
   const [bridgeEnabled, setBridgeEnabled] = useState(settings.bridgeEnabled);
   const [bridgePort, setBridgePort] = useState(settings.bridgePort);
   const [minimizeToTray, setMinimizeToTray] = useState(settings.minimizeToTray);
@@ -38,6 +41,7 @@ export function SettingsModal({
       setDefaultSaveDir(settings.defaultSaveDir);
       setMaxConnections(settings.maxConnectionsPerDownload);
       setMinSplitKb(Math.round(settings.minSplitSizeBytes / 1024));
+      setMaxConcurrentDownloads(settings.maxConcurrentDownloads);
       setBridgeEnabled(settings.bridgeEnabled);
       setBridgePort(settings.bridgePort);
       setMinimizeToTray(settings.minimizeToTray);
@@ -94,6 +98,7 @@ export function SettingsModal({
         defaultSaveDir,
         maxConnectionsPerDownload: maxConnections,
         minSplitSizeBytes: minSplitKb * 1024,
+        maxConcurrentDownloads,
         bridgeEnabled,
         bridgePort,
         minimizeToTray,
@@ -200,6 +205,26 @@ export function SettingsModal({
                   step={128}
                   value={minSplitKb}
                   onChange={(e) => setMinSplitKb(Number(e.target.value))}
+                  className="ui-slider w-full"
+                />
+              </div>
+
+              <div>
+                <div className="mb-1.5 flex items-center justify-between text-[12px]">
+                  <span className="font-medium">Max Concurrent Downloads</span>
+                  <span
+                    className="font-mono text-[11.5px] font-semibold tabular-nums"
+                    style={{ color: "var(--accent-text)" }}
+                  >
+                    {maxConcurrentDownloads}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  value={maxConcurrentDownloads}
+                  onChange={(e) => setMaxConcurrentDownloads(Number(e.target.value))}
                   className="ui-slider w-full"
                 />
               </div>

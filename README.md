@@ -1,6 +1,6 @@
 # HyperDM — High-Speed Download Manager
 
-A fast, lightweight, cross-platform desktop download manager inspired by **Internet Download Manager (IDM)**, built with **Rust**, **Tauri v2**, and a **Google Material Design 3** React + TypeScript UI.
+A fast, lightweight, cross-platform desktop download manager inspired by **Internet Download Manager (IDM)**, built with **Rust**, **Tauri v2**, and a **Linear/Raycast-inspired** React + TypeScript UI.
 
 ---
 
@@ -12,14 +12,14 @@ A fast, lightweight, cross-platform desktop download manager inspired by **Inter
 - **Zero-Copy Direct Positioned Disk I/O**
   - Pre-allocates a single `.hyperdm.part` file and writes directly to exact byte offsets (`write_all_at` on Linux/macOS, `seek_write` on Windows), avoiding temporary chunk files and post-download concatenation overhead.
 - **Zero-Setup YouTube Video & Audio Downloading**
-  - Paste any YouTube video/Shorts URL or click the floating **`⚡ Download with HyperDM`** pill on YouTube pages.
+  - Paste any YouTube video/Shorts URL or click the compact floating download icon button on YouTube Watch & Shorts players.
   - Pick from **4K (2160p), 1440p, 1080p, 720p, Standard, or Audio Only** with thumbnail, channel, and duration preview.
   - Automatically downloads and manages standalone **`yt-dlp`** and **`ffmpeg`** binaries on demand—no manual prerequisites required on Windows or Linux.
   - Downloads adaptive video and companion audio tracks in parallel (with 8 MiB `googlevideo.com` sub-ranging and original/default language preference) and performs instant lossless `ffmpeg` remuxing.
-- **Google Material Design 3 (Material You) UI**
-  - Clean desktop interface with **Dark & Light themes**, search bar, hover-highlighted rows, double-click to open files/folders, delete confirmation (with optional delete-from-disk), and a live **Statistics & Dynamic File Segmentation Map** modal with throughput sparkline.
+- **Precision Desktop UI (Linear / Raycast Inspired)**
+  - Clean, keyboard-friendly interface (`Ctrl+N`, `Ctrl+K`, `↑`/`↓`, `Space`, `Enter`) with **Dark & Light themes**, search bar, hover-revealed row actions, double-click to open files/folders, delete confirmation (with optional delete-from-disk), and a live **Statistics & Dynamic File Segmentation Map** modal with throughput sparkline.
 - **Cross-Browser Extension (Chrome, Brave, Edge, Firefox)**
-  - Manifest V3 extension that intercepts downloads when HyperDM is running (forwarding `Cookie`, `Referer`, and `User-Agent` headers), adds a right-click **Download with HyperDM** menu, and injects a floating YouTube download pill.
+  - Manifest V3 extension that intercepts downloads when HyperDM is running (forwarding `Cookie`, `Referer`, and `User-Agent` headers), adds a right-click **Download with HyperDM** menu, and injects an auto-hiding YouTube player download button.
   - Secured via loopback-only HTTP bridge (`127.0.0.1:41920`) with strict `Origin` validation.
 - **System Tray, Queue & Persistence**
   - Close-to-tray background mode with **Show**, **Pause All**, **Resume All**, and **Quit** tray actions, single-instance window focus guard, configurable concurrent download queue, and persistent pause/resume across restarts (with automatic YouTube URL refresh on expiry).
@@ -81,8 +81,8 @@ npm run tauri build
 Pushing a version tag (`v*`) triggers [`.github/workflows/release.yml`](.github/workflows/release.yml), which tests and builds Windows + Linux installers plus `hyperdm-browser-extension.zip` and publishes them to GitHub Releases:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 ---
