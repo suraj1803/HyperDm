@@ -405,7 +405,7 @@ export function App() {
                 className="font-mono text-[11px]"
                 style={{ color: "var(--text-muted)" }}
               >
-                1.0
+                1.0.1
               </span>
             </div>
 

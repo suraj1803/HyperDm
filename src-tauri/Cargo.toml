@@ -1,6 +1,6 @@
 [package]
 name = "hyperdm"
-version = "1.0.0"
+version = "1.0.1"
 description = "HyperDM — High-Speed Download Manager with Dynamic File Segmentation"
 authors = ["HyperDM"]
 edition = "2021"
