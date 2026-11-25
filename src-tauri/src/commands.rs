@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::engine::manager::DownloadManager;
 use crate::engine::models::{
-    AddDownloadRequest, AppSettings, DownloadError, DownloadTaskInfo, MediaToolsStatus,
-    ProbeResult, YouTubeProbeResult,
+    AddDownloadRequest, AppSettings, DownloadError, DownloadStatus, DownloadTaskInfo,
+    MediaToolsStatus, ProbeResult, YouTubeProbeResult,
 };
 
 #[tauri::command]
@@ -93,6 +93,34 @@ pub fn remove_download(
 ) -> Result<(), DownloadError> {
     let uuid = Uuid::parse_str(&id).map_err(|_| DownloadError::InvalidState("Invalid ID".into()))?;
     manager.remove_download(uuid, delete_file)
+}
+
+#[tauri::command]
+pub fn pause_all_downloads(manager: State<'_, DownloadManager>) -> Vec<DownloadTaskInfo> {
+    manager.pause_all();
+    manager.list_downloads()
+}
+
+#[tauri::command]
+pub async fn resume_all_downloads(
+    manager: State<'_, DownloadManager>,
+) -> Result<Vec<DownloadTaskInfo>, DownloadError> {
+    manager.resume_all().await;
+    Ok(manager.list_downloads())
+}
+
+#[tauri::command]
+pub fn clear_completed_downloads(manager: State<'_, DownloadManager>) -> Vec<DownloadTaskInfo> {
+    let completed_ids: Vec<Uuid> = manager
+        .list_downloads()
+        .into_iter()
+        .filter(|t| t.status == DownloadStatus::Completed)
+        .map(|t| t.id)
+        .collect();
+    for id in completed_ids {
+        let _ = manager.remove_download(id, false);
+    }
+    manager.list_downloads()
 }
 
 #[tauri::command]

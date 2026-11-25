@@ -54,6 +54,18 @@ export async function removeDownload(id: string, deleteFile: boolean): Promise<v
   return invoke<void>("remove_download", { id, deleteFile });
 }
 
+export async function pauseAllDownloads(): Promise<DownloadTaskInfo[]> {
+  return invoke<DownloadTaskInfo[]>("pause_all_downloads");
+}
+
+export async function resumeAllDownloads(): Promise<DownloadTaskInfo[]> {
+  return invoke<DownloadTaskInfo[]>("resume_all_downloads");
+}
+
+export async function clearCompletedDownloads(): Promise<DownloadTaskInfo[]> {
+  return invoke<DownloadTaskInfo[]>("clear_completed_downloads");
+}
+
 export async function getSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("get_settings");
 }

@@ -15,8 +15,6 @@
         "title": "HyperDM — High-Speed Download Manager",
         "width": 980,
         "height": 640,
-        "minWidth": 820,
-        "minHeight": 520,
         "center": true,
         "resizable": true
       }

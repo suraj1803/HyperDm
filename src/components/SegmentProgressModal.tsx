@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-  Activity,
+  Check,
+  Copy,
   ExternalLink,
   FolderOpen,
   Pause,
   Play,
-  Split,
   Square,
   X,
-  Zap,
 } from "lucide-react";
 import {
   cancelDownload,
@@ -46,9 +45,11 @@ function segmentColorVar(status: SegmentStatus): string {
 
 export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProps) {
   const [speedHistory, setSpeedHistory] = useState<number[]>([]);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   useEffect(() => {
     setSpeedHistory([]);
+    setCopiedUrl(false);
   }, [task?.id]);
 
   useEffect(() => {
@@ -57,15 +58,6 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
       setSpeedHistory((prev) => [...prev.slice(-49), task.speedBps]);
     }
   }, [task?.downloaded, task?.speedBps, task?.status]);
-
-  useEffect(() => {
-    if (!task) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [task, onClose]);
 
   if (!task) return null;
 
@@ -79,142 +71,158 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
 
   const sparklinePoints = speedHistory
     .map((v, i) => {
-      const x = speedHistory.length <= 1 ? 300 : (i / (speedHistory.length - 1)) * 300;
-      const y = 38 - (v / maxSpeed) * 32;
+      const x = speedHistory.length <= 1 ? 280 : (i / (speedHistory.length - 1)) * 280;
+      const y = 34 - (v / maxSpeed) * 28;
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
 
   const areaPoints =
-    speedHistory.length > 1 ? `0,40 ${sparklinePoints} 300,40` : "";
+    speedHistory.length > 1 ? `0,36 ${sparklinePoints} 280,36` : "";
+
+  function handleCopyUrl() {
+    if (!task) return;
+    void navigator.clipboard.writeText(task.url).then(() => {
+      setCopiedUrl(true);
+      window.setTimeout(() => setCopiedUrl(false), 1400);
+    });
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4">
+    <>
+      {/* Subtle Backdrop on Narrow Viewports (<768px) */}
       <div
-        className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[10px]"
-        style={{
-          backgroundColor: "var(--bg-elevated)",
-          boxShadow: "var(--shadow-modal)",
-        }}
-      >
-        {/* Header Bar */}
+        className="fixed inset-0 z-30 bg-black/40 md:hidden"
+        onClick={onClose}
+      />
+
+      <aside className="ui-drawer-panel fixed inset-y-0 right-0 z-40 flex w-full max-w-[380px] flex-col overflow-hidden md:relative md:inset-auto md:z-auto md:w-[360px] lg:w-[384px] md:max-w-none shrink-0">
+        {/* Inspector Header */}
         <div
-          className="flex shrink-0 items-center justify-between gap-3 px-5 py-3.5"
+          className="flex h-11 shrink-0 items-center justify-between gap-2 px-4"
           style={{ borderBottom: "1px solid var(--border-subtle)" }}
         >
-          <div className="flex min-w-0 items-center gap-3">
-            <Zap className="h-4.5 w-4.5 shrink-0" style={{ color: "var(--accent-text)" }} />
-            <div className="min-w-0">
-              <h2 className="truncate text-[15px] font-semibold leading-tight">
-                {task.fileName}
-              </h2>
-              <p
-                className="truncate font-mono text-[12px] leading-tight mt-0.5"
-                style={{ color: "var(--text-muted)" }}
-              >
-                {task.url}
-              </p>
-            </div>
+          <div className="min-w-0">
+            <h2
+              className="truncate text-[13px] font-semibold leading-[18px]"
+              title={task.fileName}
+            >
+              {task.fileName}
+            </h2>
           </div>
           <button
             onClick={onClose}
-            className="ui-btn-ghost flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] cursor-pointer"
-            aria-label="Close"
+            className="ui-btn-ghost flex h-7 w-7 shrink-0 items-center justify-center rounded-[5px] cursor-pointer"
+            aria-label="Close inspector"
+            title="Close inspector (Esc)"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </div>
 
-        {/* 4-Column Telemetry Strip */}
+        {/* 2x2 Precision Telemetry Grid */}
         <div
-          className="grid shrink-0 grid-cols-4 divide-x"
+          className="grid shrink-0 grid-cols-2 divide-x divide-y"
           style={{
             backgroundColor: "var(--bg-sidebar)",
             borderBottom: "1px solid var(--border-subtle)",
             borderColor: "var(--border-subtle)",
           }}
         >
-          <div className="px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-              Speed
+          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+            <div
+              className="text-[11px] font-medium uppercase tracking-[0.04em]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Throughput
             </div>
             <div
-              className="mt-1 font-mono text-[15.5px] font-semibold tabular-nums"
-              style={{ color: "var(--accent-text)" }}
+              className="mt-0.5 font-mono text-[14px] font-semibold tabular-nums"
+              style={{
+                color: task.speedBps > 0 ? "var(--accent-text)" : "var(--text-primary)",
+              }}
             >
               {formatSpeed(task.speedBps)}
             </div>
           </div>
 
-          <div className="px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-              Transferred
+          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
+            <div
+              className="text-[11px] font-medium uppercase tracking-[0.04em]"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Remaining
             </div>
-            <div className="mt-1 font-mono text-[13.5px] font-medium tabular-nums">
-              {formatBytes(task.downloaded)}
-              <span style={{ color: "var(--text-muted)" }}> / {formatBytes(task.totalSize)}</span>
-            </div>
-          </div>
-
-          <div className="px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
-            <div className="text-[11px] font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-              ETA
-            </div>
-            <div className="mt-1 font-mono text-[14.5px] font-medium tabular-nums">
+            <div className="mt-0.5 font-mono text-[14px] font-medium tabular-nums">
               {task.status === "completed" ? "Done" : formatEta(task.etaSeconds)}
             </div>
           </div>
 
-          <div className="px-4 py-3" style={{ borderColor: "var(--border-subtle)" }}>
+          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
             <div
-              className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider"
+              className="text-[11px] font-medium uppercase tracking-[0.04em]"
               style={{ color: "var(--text-muted)" }}
             >
-              <Split className="h-3 w-3" style={{ color: "var(--success)" }} />
-              Splits
+              Transferred
             </div>
+            <div className="mt-0.5 truncate font-mono text-[12px] font-medium tabular-nums">
+              {formatBytes(task.downloaded)}
+              {task.totalSize ? (
+                <span style={{ color: "var(--text-muted)" }}>
+                  {" "}
+                  / {formatBytes(task.totalSize)}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="px-3.5 py-2.5" style={{ borderColor: "var(--border-subtle)" }}>
             <div
-              className="mt-1 font-mono text-[14.5px] font-medium tabular-nums"
-              style={{ color: "var(--success)" }}
+              className="text-[11px] font-medium uppercase tracking-[0.04em]"
+              style={{ color: "var(--text-muted)" }}
             >
-              {task.dynamicSplits}{" "}
-              <span className="text-[12px] font-normal" style={{ color: "var(--text-muted)" }}>
-                ({activeSegments} active)
-              </span>
+              Segmentation
+            </div>
+            <div className="mt-0.5 font-mono text-[12px] font-medium tabular-nums">
+              {task.supportsRange ? (
+                <>
+                  <span style={{ color: "var(--text-primary)" }}>
+                    {activeSegments} active
+                  </span>
+                  <span style={{ color: "var(--text-muted)" }}>
+                    {" "}
+                    · {task.dynamicSplits} splits
+                  </span>
+                </>
+              ) : (
+                <span style={{ color: "var(--text-secondary)" }}>Single stream</span>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 space-y-3.5 overflow-y-auto p-5">
-          {/* Overall Progress + Live Sparkline */}
+        {/* Scrollable Inspector Content */}
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          {/* Progress + Live Sparkline */}
           <div
-            className="rounded-[8px] p-3.5"
+            className="rounded-[7px] p-3"
             style={{
               backgroundColor: "var(--bg-subtle)",
               border: "1px solid var(--border-subtle)",
             }}
           >
-            <div className="mb-2 flex items-center justify-between text-[13px]">
-              <span className="font-medium">
-                Overall Progress{" "}
-                <span className="capitalize" style={{ color: "var(--text-muted)" }}>
-                  · {task.status}
-                </span>
+            <div className="mb-1.5 flex items-center justify-between text-[12px]">
+              <span className="capitalize font-medium" style={{ color: "var(--text-secondary)" }}>
+                {task.status}
               </span>
-              <span
-                className="font-mono font-semibold tabular-nums"
-                style={{ color: "var(--accent-text)" }}
-              >
-                {pct.toFixed(2)}%
+              <span className="font-mono font-medium tabular-nums">
+                {task.totalSize ? `${pct.toFixed(1)}%` : formatBytes(task.downloaded)}
               </span>
             </div>
-            <div
-              className="h-2 w-full overflow-hidden rounded-full"
-              style={{ backgroundColor: "var(--bg-active)" }}
-            >
+
+            <div className="ui-progress-track">
               <div
-                className="h-full rounded-full transition-all duration-150"
+                className="ui-progress-fill"
                 style={{
                   width: `${pct}%`,
                   backgroundColor:
@@ -222,34 +230,36 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
                       ? "var(--success)"
                       : task.status === "error"
                       ? "var(--danger)"
+                      : task.status === "paused"
+                      ? "var(--warning)"
                       : "var(--accent)",
                 }}
               />
             </div>
 
             {speedHistory.length > 1 && (
-              <div className="mt-3 flex items-center justify-between gap-4">
+              <div className="mt-3">
                 <div
-                  className="flex items-center gap-1.5 font-mono text-[12px] tabular-nums"
-                  style={{ color: "var(--text-secondary)" }}
+                  className="mb-1 flex items-center justify-between font-mono text-[11px] tabular-nums"
+                  style={{ color: "var(--text-muted)" }}
                 >
-                  <Activity className="h-3.5 w-3.5" style={{ color: "var(--accent-text)" }} />
-                  Peak <strong style={{ color: "var(--text-primary)" }}>{formatSpeed(maxSpeed)}</strong>
+                  <span>Live speed</span>
+                  <span>Peak {formatSpeed(maxSpeed)}</span>
                 </div>
                 <svg
-                  viewBox="0 0 300 40"
-                  className="h-10 w-60 overflow-visible"
+                  viewBox="0 0 280 36"
+                  className="h-9 w-full overflow-visible"
                   preserveAspectRatio="none"
                 >
                   <polygon
                     points={areaPoints}
                     fill="var(--accent)"
-                    fillOpacity="0.18"
+                    fillOpacity="0.15"
                   />
                   <polyline
                     fill="none"
                     stroke="var(--accent-text)"
-                    strokeWidth="1.8"
+                    strokeWidth="1.5"
                     strokeLinejoin="round"
                     strokeLinecap="round"
                     points={sparklinePoints}
@@ -259,26 +269,20 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
             )}
           </div>
 
-          {/* Dynamic File Segmentation Map */}
-          <div
-            className="rounded-[8px] p-3.5"
-            style={{
-              backgroundColor: "var(--bg-subtle)",
-              border: "1px solid var(--border-subtle)",
-            }}
-          >
-            <div className="mb-2 flex items-center justify-between text-[13px]">
-              <span className="font-medium">Dynamic File Segmentation Map</span>
-              <span className="font-mono text-[12px]" style={{ color: "var(--text-muted)" }}>
-                {task.supportsRange
-                  ? `${task.segments.length} seg · work-stealing`
-                  : "single-stream"}
+          {/* Hardware-Style Byte Map */}
+          <div>
+            <div className="mb-1.5 flex items-center justify-between text-[12px]">
+              <span className="font-medium" style={{ color: "var(--text-secondary)" }}>
+                Byte Range Map
+              </span>
+              <span className="font-mono text-[11px] tabular-nums" style={{ color: "var(--text-muted)" }}>
+                {task.segments.length} {task.segments.length === 1 ? "segment" : "segments"}
               </span>
             </div>
 
             {totalSize > 0 && task.segments.length > 0 ? (
               <div
-                className="relative h-6 w-full overflow-hidden rounded-[5px]"
+                className="relative h-5 w-full overflow-hidden rounded-[5px]"
                 style={{
                   backgroundColor: "var(--bg-input)",
                   border: "1px solid var(--border-subtle)",
@@ -300,7 +304,7 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
                           width: `${widthPct}%`,
                           borderLeft: "1px solid var(--bg-elevated)",
                         }}
-                        title={`Segment #${seg.id}: ${formatBytes(seg.downloaded)} / ${formatBytes(segLen)} (${seg.status})`}
+                        title={`#${seg.id}: ${formatBytes(seg.downloaded)} / ${formatBytes(segLen)} (${seg.status})`}
                       />
                       <div
                         className="absolute top-0 bottom-0 transition-all duration-150"
@@ -316,170 +320,219 @@ export function SegmentProgressModal({ task, onClose }: SegmentProgressModalProp
               </div>
             ) : (
               <div
-                className="flex h-6 items-center justify-center rounded-[5px] font-mono text-[12px]"
+                className="flex h-5 items-center justify-center rounded-[5px] font-mono text-[11px]"
                 style={{
                   backgroundColor: "var(--bg-input)",
                   border: "1px solid var(--border-subtle)",
                   color: "var(--text-muted)",
                 }}
               >
-                Waiting for segment allocation…
+                {task.supportsRange ? "Allocating byte ranges…" : "Sequential stream"}
               </div>
             )}
           </div>
 
-          {/* Per-Connection Table */}
+          {/* Streamlined Worker List */}
+          {task.segments.length > 0 && (
+            <div>
+              <div
+                className="mb-1.5 text-[12px] font-medium"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Connections
+              </div>
+              <div
+                className="divide-y overflow-hidden rounded-[7px]"
+                style={{
+                  backgroundColor: "var(--bg-subtle)",
+                  border: "1px solid var(--border-subtle)",
+                  borderColor: "var(--border-subtle)",
+                }}
+              >
+                {task.segments.map((seg) => {
+                  const segLen =
+                    seg.end >= seg.start && totalSize > 0 ? seg.end - seg.start + 1 : null;
+                  const segPct =
+                    segLen && segLen > 0 ? Math.min(100, (seg.downloaded / segLen) * 100) : 0;
+
+                  return (
+                    <div
+                      key={seg.id}
+                      className="px-3 py-2 text-[12px]"
+                      style={{ borderColor: "var(--border-subtle)" }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: segmentColorVar(seg.status) }}
+                          />
+                          <span className="font-mono text-[11.5px]" style={{ color: "var(--text-muted)" }}>
+                            #{seg.id}
+                          </span>
+                          <span className="capitalize font-medium">
+                            {seg.status}
+                          </span>
+                          {seg.retries > 0 && (
+                            <span className="font-mono text-[11px]" style={{ color: "var(--warning)" }}>
+                              r{seg.retries}
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          className="font-mono text-[11.5px] font-medium tabular-nums"
+                          style={{
+                            color: seg.speedBps > 0 ? "var(--accent-text)" : "var(--text-muted)",
+                          }}
+                        >
+                          {seg.speedBps > 0 ? formatSpeed(seg.speedBps) : `${segPct.toFixed(0)}%`}
+                        </span>
+                      </div>
+                      <div
+                        className="mt-0.5 flex items-center justify-between font-mono text-[11px] tabular-nums"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        <span>
+                          {formatBytes(seg.downloaded)}
+                          {segLen !== null ? ` / ${formatBytes(segLen)}` : ""}
+                        </span>
+                        {totalSize > 0 && (
+                          <span>
+                            {formatBytes(seg.start)}–{formatBytes(seg.end)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Source & File Path Info */}
           <div
-            className="overflow-hidden rounded-[8px]"
+            className="space-y-2 rounded-[7px] p-3 text-[11.5px]"
             style={{
               backgroundColor: "var(--bg-subtle)",
               border: "1px solid var(--border-subtle)",
             }}
           >
-            <div className="max-h-56 overflow-y-auto">
-              <table className="w-full text-left text-[12.5px]">
-                <thead
-                  className="sticky top-0 text-[11px] uppercase tracking-wider"
-                  style={{
-                    backgroundColor: "var(--bg-sidebar)",
-                    borderBottom: "1px solid var(--border-subtle)",
-                    color: "var(--text-muted)",
-                  }}
+            <div>
+              <div className="flex items-center justify-between">
+                <span style={{ color: "var(--text-muted)" }}>Source</span>
+                <button
+                  type="button"
+                  onClick={handleCopyUrl}
+                  className="ui-btn-ghost inline-flex h-5 items-center gap-1 rounded px-1.5 text-[11px] cursor-pointer"
                 >
-                  <tr>
-                    <th className="px-3.5 py-2 font-medium">Conn</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Downloaded</th>
-                    <th className="px-3 py-2 font-medium">Byte Range</th>
-                    <th className="px-3.5 py-2 text-right font-medium">Speed</th>
-                  </tr>
-                </thead>
-                <tbody className="font-mono text-[12px] tabular-nums">
-                  {task.segments.map((seg) => {
-                    const segLen =
-                      seg.end >= seg.start && totalSize > 0 ? seg.end - seg.start + 1 : null;
-                    return (
-                      <tr
-                        key={seg.id}
-                        style={{ borderTop: "1px solid var(--border-subtle)" }}
-                      >
-                        <td className="px-3.5 py-2" style={{ color: "var(--text-muted)" }}>
-                          #{seg.id}
-                        </td>
-                        <td
-                          className="px-3 py-2 font-sans text-[12.5px] font-medium capitalize"
-                          style={{ color: segmentColorVar(seg.status) }}
-                        >
-                          {seg.status}
-                          {seg.retries > 0 ? ` (r${seg.retries})` : ""}
-                        </td>
-                        <td className="px-3 py-2">
-                          {formatBytes(seg.downloaded)}
-                          {segLen !== null ? (
-                            <span style={{ color: "var(--text-muted)" }}>
-                              {" "}
-                              / {formatBytes(segLen)}
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-2" style={{ color: "var(--text-muted)" }}>
-                          {totalSize > 0
-                            ? `${formatBytes(seg.start)} – ${formatBytes(seg.end)}`
-                            : "stream"}
-                        </td>
-                        <td
-                          className="px-3.5 py-2 text-right font-medium"
-                          style={{ color: "var(--accent-text)" }}
-                        >
-                          {formatSpeed(seg.speedBps)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                  {copiedUrl ? (
+                    <>
+                      <Check className="h-3 w-3" style={{ color: "var(--success)" }} />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3 w-3" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <div
+                className="mt-0.5 truncate font-mono"
+                style={{ color: "var(--text-secondary)" }}
+                title={task.url}
+              >
+                {task.url}
+              </div>
+            </div>
+
+            <div
+              className="pt-2"
+              style={{ borderTop: "1px solid var(--border-subtle)" }}
+            >
+              <div style={{ color: "var(--text-muted)" }}>Location</div>
+              <div
+                className="mt-0.5 truncate font-mono"
+                style={{ color: "var(--text-secondary)" }}
+                title={task.fullPath}
+              >
+                {task.fullPath}
+              </div>
             </div>
           </div>
 
           {task.errorMessage && (
             <div
-              className="rounded-[7px] px-3.5 py-2.5 text-[13px]"
+              className="rounded-[6px] px-3 py-2 text-[12px]"
               style={{
                 backgroundColor: "var(--danger-soft)",
-                border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--danger) 25%, transparent)",
                 color: "var(--danger)",
               }}
             >
-              <strong>Error:</strong> {task.errorMessage}
+              {task.errorMessage}
             </div>
           )}
         </div>
 
-        {/* Footer Action Bar */}
+        {/* Inspector Footer Actions */}
         <div
-          className="flex shrink-0 items-center justify-between px-5 py-3.5"
+          className="flex shrink-0 items-center justify-between gap-2 px-4 py-2.5"
           style={{
             backgroundColor: "var(--bg-sidebar)",
             borderTop: "1px solid var(--border-subtle)",
           }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             {task.status === "downloading" ? (
               <button
                 onClick={() => void pauseDownload(task.id)}
-                className="ui-btn-secondary flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
+                className="ui-btn-secondary flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12.5px] font-medium cursor-pointer"
               >
-                <Pause className="h-3.5 w-3.5" />
-                Pause
+                <Pause className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span>Pause</span>
               </button>
             ) : task.status === "paused" || task.status === "error" ? (
               <button
                 onClick={() => void resumeDownload(task.id)}
-                className="ui-btn-primary flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
+                className="ui-btn-primary flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12.5px] font-medium cursor-pointer"
               >
-                <Play className="h-3.5 w-3.5" />
-                Resume
+                <Play className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span>Resume</span>
               </button>
             ) : null}
 
             {(task.status === "downloading" || task.status === "paused") && (
               <button
                 onClick={() => void cancelDownload(task.id)}
-                className="ui-btn-danger flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
+                className="ui-btn-danger flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12.5px] font-medium cursor-pointer"
               >
-                <Square className="h-3.5 w-3.5" />
-                Cancel
+                <Square className="h-3 w-3" strokeWidth={1.75} />
+                <span>Cancel</span>
               </button>
             )}
 
             {task.status === "completed" && (
-              <>
-                <button
-                  onClick={() => void openPath(task.fullPath, false)}
-                  className="ui-btn-primary flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Open File
-                </button>
-                <button
-                  onClick={() => void openPath(task.fullPath, true)}
-                  className="ui-btn-secondary flex h-8.5 items-center gap-1.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  Show in Folder
-                </button>
-              </>
+              <button
+                onClick={() => void openPath(task.fullPath, false)}
+                className="ui-btn-primary flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12.5px] font-medium cursor-pointer"
+              >
+                <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <span>Open File</span>
+              </button>
             )}
           </div>
 
           <button
-            onClick={onClose}
-            className="ui-btn-secondary h-8.5 rounded-[6px] px-3.5 text-[13px] font-medium cursor-pointer"
+            onClick={() => void openPath(task.fullPath, true)}
+            className="ui-btn-secondary flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[12.5px] font-medium cursor-pointer"
           >
-            Close
+            <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.75} />
+            <span>Folder</span>
           </button>
         </div>
-      </div>
-    </div>
+      </aside>
+    </>
   );
 }

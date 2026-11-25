@@ -1,15 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Film,
   FolderOpen,
-  Globe,
+  Link2,
   Loader2,
   Music,
-  ShieldAlert,
-  Sparkles,
+  RefreshCw,
   X,
-  Zap,
 } from "lucide-react";
 import { addDownload, pickDirectory, probeUrl, probeYouTube } from "../api/tauri";
 import type {
@@ -48,6 +46,15 @@ function isYouTubeLink(raw: string): boolean {
       u.pathname.startsWith("/live/") ||
       u.pathname.startsWith("/embed/")
     );
+  } catch {
+    return false;
+  }
+}
+
+function isValidHttpUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw.trim());
+    return (u.protocol === "http:" || u.protocol === "https:") && Boolean(u.hostname);
   } catch {
     return false;
   }
@@ -94,10 +101,21 @@ export function AddDownloadModal({
   const [probingYouTube, setProbingYouTube] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastProbedUrlRef = useRef<string>("");
+
+  const connectionChoices = useMemo(() => {
+    const base = [1, 2, 4, 8, 16];
+    if (!base.includes(settings.maxConnectionsPerDownload)) {
+      base.push(settings.maxConnectionsPerDownload);
+      base.sort((a, b) => a - b);
+    }
+    return base;
+  }, [settings.maxConnectionsPerDownload]);
 
   async function runProbe(targetUrl: string) {
     const trimmed = targetUrl.trim();
-    if (!trimmed) return;
+    if (!trimmed || !isValidHttpUrl(trimmed)) return;
+    lastProbedUrlRef.current = trimmed;
     setProbing(true);
     setError(null);
     setProbe(null);
@@ -140,6 +158,7 @@ export function AddDownloadModal({
   useEffect(() => {
     if (isOpen) {
       const startUrl = initialUrl?.trim() ?? "";
+      lastProbedUrlRef.current = "";
       setUrl(startUrl);
       setSaveDir(settings.defaultSaveDir);
       setFileName("");
@@ -152,11 +171,22 @@ export function AddDownloadModal({
       setProbingYouTube(false);
       setSubmitting(false);
 
-      if (startUrl) {
+      if (startUrl && isValidHttpUrl(startUrl)) {
         void runProbe(startUrl);
       }
     }
   }, [isOpen, initialUrl, settings]);
+
+  // Auto-probe after short pause when pasting/typing a valid URL
+  useEffect(() => {
+    if (!isOpen) return;
+    const trimmed = url.trim();
+    if (!isValidHttpUrl(trimmed) || trimmed === lastProbedUrlRef.current) return;
+    const timer = window.setTimeout(() => {
+      void runProbe(trimmed);
+    }, 380);
+    return () => window.clearTimeout(timer);
+  }, [url, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -185,7 +215,7 @@ export function AddDownloadModal({
     e.preventDefault();
     const trimmed = url.trim();
     if (!trimmed) {
-      setError("Please enter a valid HTTP/HTTPS or YouTube URL.");
+      setError("Enter a valid HTTP/HTTPS or YouTube URL.");
       return;
     }
 
@@ -200,7 +230,7 @@ export function AddDownloadModal({
       if (ytProbe && selectedYtFormat) {
         if (selectedYtFormat.needsMux && !ytProbe.ffmpegAvailable) {
           setError(
-            "This HD quality requires ffmpeg to merge video & audio. Install ffmpeg or pick a Direct / Audio Only option."
+            "This quality requires ffmpeg to merge video and audio. Install ffmpeg in Preferences or pick a direct stream."
           );
           setSubmitting(false);
           return;
@@ -237,124 +267,166 @@ export function AddDownloadModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-[2px] p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-4"
+      onClick={onClose}
+    >
       <div
-        className="flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[10px]"
+        className="ui-modal-panel flex max-h-[86vh] w-full max-w-[496px] flex-col overflow-hidden rounded-[10px]"
         style={{
           backgroundColor: "var(--bg-elevated)",
           boxShadow: "var(--shadow-modal)",
         }}
+        onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Bar */}
+        {/* Header */}
         <div
-          className="flex h-[54px] shrink-0 items-center justify-between px-5"
+          className="flex h-11 shrink-0 items-center justify-between px-4"
           style={{ borderBottom: "1px solid var(--border-subtle)" }}
         >
-          <div className="flex items-center gap-2.5">
-            <Zap className="h-4.5 w-4.5" style={{ color: "var(--accent-text)" }} />
-            <h2 className="text-[15px] font-semibold tracking-tight">New Download</h2>
-          </div>
+          <h2 className="text-[14px] font-semibold tracking-[-0.01em]">New Download</h2>
           <button
             type="button"
             onClick={onClose}
-            className="ui-btn-ghost flex h-8 w-8 items-center justify-center rounded-[6px] cursor-pointer"
+            className="ui-btn-ghost flex h-7 w-7 items-center justify-center rounded-[5px] cursor-pointer"
             aria-label="Close"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 space-y-4 overflow-y-auto p-5">
-            {/* URL Input */}
+          <div className="flex-1 space-y-3.5 overflow-y-auto p-4">
+            {/* Source URL */}
             <div>
               <label
-                className="mb-1.5 block text-[12.5px] font-medium"
+                className="mb-1.5 block text-[12px] font-medium"
                 style={{ color: "var(--text-secondary)" }}
               >
-                URL (Direct file or YouTube)
+                Source URL
               </label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Globe
-                    className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-                    style={{ color: "var(--text-muted)" }}
-                  />
-                  <input
-                    type="url"
-                    required
-                    autoFocus
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    onBlur={() => {
-                      if (url.trim().startsWith("http") && !probe && !ytProbe && !probing) {
-                        void runProbe(url);
-                      }
-                    }}
-                    placeholder="https://youtube.com/watch?v=... or file URL"
-                    className="ui-input h-9.5 w-full rounded-[7px] pl-9.5 pr-3 text-[13.5px]"
-                  />
-                </div>
+              <div className="relative">
+                <Link2
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+                  strokeWidth={1.75}
+                  style={{ color: "var(--text-muted)" }}
+                />
+                <input
+                  type="url"
+                  required
+                  autoFocus
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://example.com/archive.zip or YouTube link"
+                  className="ui-input h-8 w-full rounded-[6px] pl-8 pr-8 text-[13px]"
+                />
                 <button
                   type="button"
                   onClick={() => void runProbe(url)}
-                  disabled={probing || !url.trim()}
-                  className="ui-btn-secondary flex h-9.5 items-center gap-1.5 rounded-[7px] px-3.5 text-[13px] font-medium cursor-pointer"
+                  disabled={probing || !isValidHttpUrl(url)}
+                  className="ui-btn-ghost absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-[4px] cursor-pointer"
+                  title="Probe URL"
                 >
-                  {probing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  Probe
+                  {probing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: "var(--accent-text)" }} />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  )}
                 </button>
               </div>
             </div>
 
             {probingYouTube && (
               <div
-                className="flex items-center gap-2.5 rounded-[7px] px-3.5 py-2.5 text-[13px]"
+                className="flex items-center gap-2 rounded-[6px] px-3 py-2 text-[12px]"
+                style={{
+                  backgroundColor: "var(--bg-subtle)",
+                  border: "1px solid var(--border-subtle)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <Loader2
+                  className="h-3.5 w-3.5 shrink-0 animate-spin"
+                  style={{ color: "var(--accent-text)" }}
+                />
+                <span>Fetching available video & audio streams…</span>
+              </div>
+            )}
+
+            {/* Direct Probe Metadata Strip */}
+            {probe && !ytProbe && (
+              <div
+                className="flex items-center justify-between gap-2 rounded-[6px] px-3 py-2 text-[12px]"
                 style={{
                   backgroundColor: "var(--bg-subtle)",
                   border: "1px solid var(--border-subtle)",
                 }}
               >
-                <Loader2
-                  className="h-4 w-4 shrink-0 animate-spin"
-                  style={{ color: "var(--accent-text)" }}
-                />
-                <span style={{ color: "var(--text-secondary)" }}>
-                  Extracting YouTube formats (auto-installing yt-dlp on first run if needed)…
+                <div className="flex min-w-0 items-center gap-2 font-mono tabular-nums">
+                  <span className="font-medium" style={{ color: "var(--text-primary)" }}>
+                    {formatBytes(probe.totalSize)}
+                  </span>
+                  {probe.contentType && (
+                    <>
+                      <span style={{ color: "var(--text-muted)" }}>·</span>
+                      <span className="truncate" style={{ color: "var(--text-muted)" }}>
+                        {probe.contentType.split(";")[0]}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <span
+                  className="inline-flex shrink-0 items-center gap-1.5 text-[11.5px] font-medium"
+                  style={{
+                    color: probe.supportsRange ? "var(--success)" : "var(--warning)",
+                  }}
+                >
+                  <span
+                    className="h-1.5 w-1.5 rounded-full"
+                    style={{
+                      backgroundColor: probe.supportsRange
+                        ? "var(--success)"
+                        : "var(--warning)",
+                    }}
+                  />
+                  {probe.supportsRange ? "Multi-segment" : "Single stream"}
                 </span>
               </div>
             )}
 
-            {/* YouTube Preview & Quality Picker */}
+            {/* YouTube Preview & Format Picker */}
             {ytProbe && (
               <div
-                className="space-y-3 rounded-[8px] p-3.5"
+                className="space-y-2.5 rounded-[8px] p-3"
                 style={{
                   backgroundColor: "var(--bg-subtle)",
                   border: "1px solid var(--border-subtle)",
                 }}
               >
-                <div className="flex gap-3">
+                <div className="flex gap-2.5">
                   {ytProbe.thumbnail && (
                     <img
                       src={ytProbe.thumbnail}
-                      alt={ytProbe.title}
-                      className="h-16 w-28 shrink-0 rounded-[5px] object-cover"
+                      alt=""
+                      className="h-12 w-[84px] shrink-0 rounded-[5px] object-cover"
+                      style={{ border: "1px solid var(--border-subtle)" }}
                     />
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="line-clamp-2 text-[13.5px] font-medium leading-snug">
+                    <div className="line-clamp-2 text-[12.5px] font-medium leading-[17px]">
                       {ytProbe.title}
                     </div>
                     <div
-                      className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px]"
+                      className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11.5px]"
                       style={{ color: "var(--text-muted)" }}
                     >
-                      {ytProbe.uploader && <span>{ytProbe.uploader}</span>}
+                      {ytProbe.uploader && <span className="truncate">{ytProbe.uploader}</span>}
                       {ytProbe.durationSeconds ? (
                         <>
                           <span>·</span>
-                          <span className="font-mono">{formatDuration(ytProbe.durationSeconds)}</span>
+                          <span className="font-mono tabular-nums">
+                            {formatDuration(ytProbe.durationSeconds)}
+                          </span>
                         </>
                       ) : null}
                     </div>
@@ -363,12 +435,12 @@ export function AddDownloadModal({
 
                 <div>
                   <div
-                    className="mb-1.5 text-[11px] font-medium uppercase tracking-wider"
+                    className="mb-1 text-[11px] font-medium uppercase tracking-[0.04em]"
                     style={{ color: "var(--text-muted)" }}
                   >
-                    Quality
+                    Stream Quality
                   </div>
-                  <div className="max-h-44 space-y-1.5 overflow-y-auto pr-0.5">
+                  <div className="max-h-40 space-y-1 overflow-y-auto pr-0.5">
                     {ytProbe.formats.map((fmt) => {
                       const active = fmt.id === selectedFormatId;
                       const disabled = fmt.needsMux && !ytProbe.ffmpegAvailable;
@@ -381,7 +453,7 @@ export function AddDownloadModal({
                             setSelectedFormatId(fmt.id);
                             setFileName(buildYouTubeFileName(ytProbe.title, fmt));
                           }}
-                          className="flex w-full items-center justify-between rounded-[6px] px-3 py-2 text-left text-[13px] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="flex h-8 w-full items-center justify-between rounded-[6px] px-2.5 text-left text-[12.5px] transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           style={{
                             backgroundColor: active ? "var(--accent-soft)" : "var(--bg-input)",
                             border: active
@@ -390,22 +462,24 @@ export function AddDownloadModal({
                             color: active ? "var(--accent-text)" : "var(--text-primary)",
                           }}
                         >
-                          <span className="flex items-center gap-2 font-medium">
+                          <span className="flex min-w-0 items-center gap-2 truncate font-medium">
                             {fmt.isAudioOnly ? (
-                              <Music className="h-3.5 w-3.5" />
+                              <Music className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
                             ) : (
-                              <Film className="h-3.5 w-3.5" />
+                              <Film className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
                             )}
-                            <span>{fmt.label}</span>
+                            <span className="truncate">{fmt.label}</span>
                             {disabled && (
-                              <span className="text-[11px] opacity-75">(requires ffmpeg)</span>
+                              <span className="shrink-0 text-[11px] opacity-75">
+                                (needs ffmpeg)
+                              </span>
                             )}
                           </span>
-                          <span className="flex items-center gap-2 font-mono text-[12px] tabular-nums">
+                          <span className="flex shrink-0 items-center gap-2 font-mono text-[11.5px] tabular-nums">
                             <span style={{ color: "var(--text-secondary)" }}>
                               {fmt.approxSizeBytes ? `~${formatBytes(fmt.approxSizeBytes)}` : "—"}
                             </span>
-                            {active && <Check className="h-3.5 w-3.5" />}
+                            {active && <Check className="h-3.5 w-3.5" strokeWidth={2} />}
                           </span>
                         </button>
                       );
@@ -415,133 +489,78 @@ export function AddDownloadModal({
               </div>
             )}
 
-            {/* Direct File Probe Info */}
-            {probe && !ytProbe && (
-              <div
-                className="flex flex-wrap items-center justify-between gap-2 rounded-[7px] px-3.5 py-2.5 text-[12.5px]"
-                style={{
-                  backgroundColor: "var(--bg-subtle)",
-                  border: "1px solid var(--border-subtle)",
-                }}
-              >
-                <div className="flex items-center gap-2.5 font-mono tabular-nums">
-                  <span style={{ color: "var(--text-secondary)" }}>
-                    Size: <strong style={{ color: "var(--text-primary)" }}>{formatBytes(probe.totalSize)}</strong>
-                  </span>
-                  {probe.contentType && (
-                    <span className="truncate max-w-[180px]" style={{ color: "var(--text-muted)" }}>
-                      {probe.contentType.split(";")[0]}
-                    </span>
-                  )}
-                </div>
-                {probe.supportsRange ? (
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-[5px] px-2.5 py-0.5 text-[12px] font-medium"
-                    style={{
-                      backgroundColor: "var(--success-soft)",
-                      color: "var(--success)",
-                    }}
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    Multi-Segment Ready
-                  </span>
-                ) : (
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-[5px] px-2.5 py-0.5 text-[12px] font-medium"
-                    style={{
-                      backgroundColor: "var(--warning-soft)",
-                      color: "var(--warning)",
-                    }}
-                  >
-                    <ShieldAlert className="h-3.5 w-3.5" />
-                    Single Stream
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Filename & Connections */}
-            <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-              <div>
-                <label
-                  className="mb-1.5 block text-[12.5px] font-medium"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  File Name
-                </label>
-                <input
-                  type="text"
-                  value={fileName}
-                  onChange={(e) => setFileName(e.target.value)}
-                  placeholder="Auto-detected from server"
-                  className="ui-input h-9.5 w-full rounded-[7px] px-3 text-[13.5px]"
-                />
-              </div>
-
-              <div>
-                <label
-                  className="mb-1.5 flex items-center justify-between text-[12.5px] font-medium"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  <span>Max Connections</span>
-                  <span
-                    className="font-mono text-[12.5px] font-semibold tabular-nums"
-                    style={{ color: "var(--accent-text)" }}
-                  >
-                    {maxConnections}
-                  </span>
-                </label>
-                <div
-                  className="flex h-9.5 items-center rounded-[7px] px-3"
-                  style={{
-                    backgroundColor: "var(--bg-subtle)",
-                    border: "1px solid var(--border-subtle)",
-                  }}
-                >
-                  <input
-                    type="range"
-                    min={1}
-                    max={16}
-                    value={maxConnections}
-                    onChange={(e) => setMaxConnections(Number(e.target.value))}
-                    className="ui-slider w-full"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Save Directory */}
+            {/* File Name */}
             <div>
               <label
-                className="mb-1.5 block text-[12.5px] font-medium"
+                className="mb-1.5 block text-[12px] font-medium"
                 style={{ color: "var(--text-secondary)" }}
               >
-                Save Folder
+                Save As
+              </label>
+              <input
+                type="text"
+                value={fileName}
+                onChange={(e) => setFileName(e.target.value)}
+                placeholder="Auto-detected filename"
+                className="ui-input h-8 w-full rounded-[6px] px-2.5 text-[13px]"
+              />
+            </div>
+
+            {/* Destination Folder */}
+            <div>
+              <label
+                className="mb-1.5 block text-[12px] font-medium"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                Location
               </label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={saveDir}
                   onChange={(e) => setSaveDir(e.target.value)}
-                  className="ui-input h-9.5 flex-1 rounded-[7px] px-3 font-mono text-[12.5px]"
+                  className="ui-input h-8 min-w-0 flex-1 rounded-[6px] px-2.5 font-mono text-[12px]"
                 />
                 <button
                   type="button"
                   onClick={handleBrowse}
-                  className="ui-btn-secondary flex h-9.5 items-center gap-1.5 rounded-[7px] px-3.5 text-[13px] font-medium cursor-pointer"
+                  className="ui-btn-secondary flex h-8 shrink-0 items-center gap-1.5 rounded-[6px] px-2.5 text-[12.5px] font-medium cursor-pointer"
                 >
-                  <FolderOpen className="h-4 w-4" />
-                  Browse
+                  <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  <span>Browse</span>
                 </button>
+              </div>
+            </div>
+
+            {/* Parallel Connections Segmented Picker */}
+            <div className="flex items-center justify-between gap-3 pt-0.5">
+              <div>
+                <div className="text-[12.5px] font-medium">Connections</div>
+                <div className="text-[11.5px]" style={{ color: "var(--text-muted)" }}>
+                  Parallel HTTP range workers
+                </div>
+              </div>
+              <div className="ui-segmented">
+                {connectionChoices.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    data-active={maxConnections === n}
+                    onClick={() => setMaxConnections(n)}
+                    className="ui-segmented-item font-mono tabular-nums"
+                  >
+                    {n}
+                  </button>
+                ))}
               </div>
             </div>
 
             {error && (
               <div
-                className="rounded-[7px] px-3.5 py-2.5 text-[13px]"
+                className="rounded-[6px] px-3 py-2 text-[12px] leading-[17px]"
                 style={{
                   backgroundColor: "var(--danger-soft)",
-                  border: "1px solid color-mix(in srgb, var(--danger) 30%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--danger) 25%, transparent)",
                   color: "var(--danger)",
                 }}
               >
@@ -550,9 +569,9 @@ export function AddDownloadModal({
             )}
           </div>
 
-          {/* Footer Bar */}
+          {/* Footer */}
           <div
-            className="flex shrink-0 items-center justify-end gap-2.5 px-5 py-3.5"
+            className="flex shrink-0 items-center justify-end gap-2 px-4 py-2.5"
             style={{
               backgroundColor: "var(--bg-sidebar)",
               borderTop: "1px solid var(--border-subtle)",
@@ -561,21 +580,17 @@ export function AddDownloadModal({
             <button
               type="button"
               onClick={onClose}
-              className="ui-btn-secondary h-9 rounded-[7px] px-4 text-[13.5px] font-medium cursor-pointer"
+              className="ui-btn-secondary h-8 rounded-[6px] px-3 text-[12.5px] font-medium cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting || probing || !url.trim()}
-              className="ui-btn-primary flex h-9 items-center gap-2 rounded-[7px] px-4 text-[13.5px] font-medium cursor-pointer"
+              className="ui-btn-primary flex h-8 items-center gap-1.5 rounded-[6px] px-3.5 text-[12.5px] font-medium cursor-pointer"
             >
-              {submitting ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Zap className="h-4 w-4" />
-              )}
-              {ytProbe ? "Download Video" : "Start Download"}
+              {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <span>{ytProbe ? "Download Video" : "Start Download"}</span>
             </button>
           </div>
         </form>
