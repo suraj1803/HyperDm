@@ -13,6 +13,19 @@ use crate::engine::models::{
     DownloadError, MediaToolsStatus, YouTubeFormatOption, YouTubeProbeResult,
 };
 
+/// Builds a child `Command` that never allocates a visible console window on Windows.
+fn background_command(program: &Path) -> Command {
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(program);
+    cmd.stdin(std::process::Stdio::null());
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 /// Returns true if the URL points to a YouTube watch page, Shorts, Music, or youtu.be link.
 pub fn is_youtube_url(raw_url: &str) -> bool {
     let Ok(parsed) = Url::parse(raw_url.trim()) else {
@@ -276,7 +289,7 @@ pub async fn probe_youtube(
         None => install_or_update_ytdlp(client, data_dir).await?,
     };
 
-    let output = Command::new(&ytdlp_path)
+    let output = background_command(&ytdlp_path)
         .args([
             "--dump-single-json",
             "--no-playlist",
@@ -590,8 +603,7 @@ pub async fn mux_video_and_audio(
     };
 
     // Attempt 1: Instant lossless stream copy (non-interactive, explicit v+a mapping)
-    let status = Command::new(&ffmpeg)
-        .stdin(std::process::Stdio::null())
+    let status = background_command(&ffmpeg)
         .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(video_part)
         .arg("-i")
@@ -616,8 +628,7 @@ pub async fn mux_video_and_audio(
     }
 
     // Attempt 2: Video stream copy + AAC audio transcode (handles Opus-in-MP4 compatibility)
-    let fallback = Command::new(&ffmpeg)
-        .stdin(std::process::Stdio::null())
+    let fallback = background_command(&ffmpeg)
         .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"])
         .arg(video_part)
         .arg("-i")
