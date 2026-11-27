@@ -99,12 +99,23 @@ pub async fn run_download_coordinator(
         min_split_size
     };
 
-    // Open or create & pre-allocate the .part file
-    let file = match prepare_part_file(&part_path, total_size) {
-        Ok(f) => Arc::new(f),
-        Err(e) => {
+    // Open or create & pre-allocate the .part file off the async runtime thread
+    let part_path_for_open = part_path.clone();
+    let file = match tokio::task::spawn_blocking(move || {
+        prepare_part_file(&part_path_for_open, total_size)
+    })
+    .await
+    {
+        Ok(Ok(f)) => Arc::new(f),
+        Ok(Err(e)) => {
             task.status = DownloadStatus::Error;
             task.error_message = Some(e.to_string());
+            on_progress(task.clone());
+            return task;
+        }
+        Err(e) => {
+            task.status = DownloadStatus::Error;
+            task.error_message = Some(format!("File preparation task panicked: {}", e));
             on_progress(task.clone());
             return task;
         }
@@ -392,13 +403,57 @@ async fn run_single_stream_download(
     }
 }
 
+/// On Windows NTFS/ReFS, marks the `.part` file as sparse before `set_len` so writing at
+/// high byte offsets (e.g., 8.75 GB into a 10 GB file) starts in <1ms instead of blocking
+/// for several seconds while the kernel physically zero-fills gigabytes up to ValidDataLength.
+#[cfg(windows)]
+fn mark_file_sparse(file: &std::fs::File) {
+    use std::os::windows::io::AsRawHandle;
+    const FSCTL_SET_SPARSE: u32 = 0x0009_00C4;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn DeviceIoControl(
+            h_device: *mut std::ffi::c_void,
+            dw_io_control_code: u32,
+            lp_in_buffer: *const std::ffi::c_void,
+            n_in_buffer_size: u32,
+            lp_out_buffer: *mut std::ffi::c_void,
+            n_out_buffer_size: u32,
+            lp_bytes_returned: *mut u32,
+            lp_overlapped: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+
+    let mut bytes_returned: u32 = 0;
+    unsafe {
+        let _ = DeviceIoControl(
+            file.as_raw_handle() as *mut std::ffi::c_void,
+            FSCTL_SET_SPARSE,
+            std::ptr::null(),
+            0,
+            std::ptr::null_mut(),
+            0,
+            &mut bytes_returned,
+            std::ptr::null_mut(),
+        );
+    }
+}
+
 fn prepare_part_file(part_path: &Path, total_size: u64) -> Result<std::fs::File, DownloadError> {
+    let is_new = !part_path.exists();
     let file = OpenOptions::new()
         .create(true)
         .read(true)
         .write(true)
         .open(part_path)?;
+    if is_new {
+        #[cfg(windows)]
+        mark_file_sparse(&file);
+    }
     if file.metadata()?.len() != total_size {
+        #[cfg(windows)]
+        mark_file_sparse(&file);
         file.set_len(total_size)?;
     }
     Ok(file)
